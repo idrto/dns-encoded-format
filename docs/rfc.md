@@ -195,11 +195,13 @@ To reach a gateway or proxy over HTTPS while carrying a non-HTTP URI, the URI mu
 
 ### 12.2 Solution
 
-DEF maps an arbitrary URI string to a single DNS label. That label is placed as the leftmost label of a fully qualified domain name (FQDN) under a controlled zone (for example `idr.to`):
+DEF maps a URI **payload** (the URI body without its scheme prefix) to a single DNS label. That label is placed as the leftmost label of a fully qualified domain name (FQDN) under a controlled zone (for example `idr.to`):
 
 ```text
 <encoded-label>.idr.to
 ```
+
+The gateway zone implies the URI scheme. For `idr.to`, the scheme is `idrto` and the `idrto:` prefix is **not** part of the encoded input. A logical URI such as `idrto:user@example.com/db1.us-east/accounts-db` is carried by encoding only `user@example.com/db1.us-east/accounts-db`.
 
 The result is a valid hostname suitable for:
 
@@ -207,56 +209,46 @@ The result is a valid hostname suitable for:
 * TLS connections with a correct SNI value, and
 * HTTPS URLs of the form `https://<encoded-label>.idr.to/...`.
 
-The gateway at `idr.to` receives the TLS connection, reads the SNI hostname, extracts and decodes the embedded label, and recovers the original URI for routing to the appropriate backend or protocol handler.
+The gateway at `idr.to` receives the TLS connection, reads the SNI hostname, extracts and decodes the embedded label to recover the URI payload, and routes the request (prepending the implied scheme where needed).
 
-DEF does **not** parse URI structure. The entire URI string—including scheme, credentials, host, path segments, and slashes—is encoded as opaque text. Decoding restores the canonical lowercase ASCII form of that string.
+DEF does **not** parse URI structure. The payload—including credentials, host, path segments, and slashes—is encoded as opaque text. Decoding restores the canonical lowercase ASCII form of that payload.
 
 ### 12.3 Worked Example
 
-Consider an idrto resource URI with path segments (slashes):
+Consider an idrto resource with path segments (slashes). The scheme is implied by the `idr.to` zone and is not encoded:
 
 ```text
-Input URI:
-  idrto:user@example.com/db1.us-east/accounts-db
+URI payload (input to DEF):
+  user@example.com/db1.us-east/accounts-db
 ```
 
-Apply DEF to the full string:
+Apply DEF to the payload:
 
 | Step | Value |
 | ---- | ----- |
-| Canonical form | `idrto:user@example.com/db1.us-east/accounts-db` |
-| Encoded label (62 characters) | `idrto-3auser-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb` |
-| FQDN | `idrto-3auser-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb.idr.to` |
-| HTTPS URL | `https://idrto-3auser-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb.idr.to` |
+| Canonical form | `user@example.com/db1.us-east/accounts-db` |
+| Encoded label (54 characters) | `user-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb` |
+| FQDN | `user-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb.idr.to` |
+| HTTPS URL | `https://user-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb.idr.to` |
 
-Character-by-character encoding of significant bytes:
+Encoding the payload by segment:
 
 | Segment | Characters | Encoded fragment |
 | ------- | ---------- | ---------------- |
-| Scheme | `idrto:` | `idrto-3a` |
 | User | `user@` | `user-40` |
 | Host | `example.com` | `example-2ecom` |
 | Path | `/db1.us-east/accounts-db` | `-2fdb1-2eus-2deast-2faccounts-2ddb` |
 
+The full logical URI `idrto:user@example.com/db1.us-east/accounts-db` is recovered by the gateway from the decoded payload and the zone-implied `idrto:` scheme.
+
 A client that wishes to access this resource over HTTPS:
 
-1. Encodes the URI with DEF.
+1. Takes the URI payload (everything after `idrto:`) and encodes it with DEF.
 2. Forms the FQDN `<encoded>.idr.to`.
 3. Opens a TLS connection to that hostname, sending the same hostname in SNI.
-4. The server decodes the label and dispatches to the resource identified by `idrto:user@example.com/db1.us-east/accounts-db`.
+4. The server decodes the label to `user@example.com/db1.us-east/accounts-db` and routes using the implied `idrto:` scheme.
 
-### 12.4 Simpler HTTPS URI Example
-
-For comparison, a conventional HTTPS URI encodes similarly:
-
-```text
-Input:  https://Example.COM/path
-Output: https-3a-2f-2fexample-2ecom-2fpath
-FQDN:   https-3a-2f-2fexample-2ecom-2fpath.idr.to
-URL:    https://https-3a-2f-2fexample-2ecom-2fpath.idr.to
-```
-
-### 12.5 Length Constraint
+### 12.4 Length Constraint
 
 If the encoded label exceeds 63 characters, the URI cannot be represented as a single DNS label using DEF. Applications MUST handle this error or split the identifier across multiple labels using a separate convention outside this specification.
 
@@ -271,7 +263,7 @@ If the encoded label exceeds 63 characters, the URI cannot be represented as a s
 | `alice-1`          | `alice-2d1`            |
 | `ssh`              | `ssh`                  |
 | `postgres`         | `postgres`             |
-| `idrto:user@example.com/db1.us-east/accounts-db` | `idrto-3auser-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb` |
+| `user@example.com/db1.us-east/accounts-db` | `user-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb` |
 | `用户`               | `-e7-94-a8-e6-88-b7`   |
 | `😊`               | `-f0-9f-98-8a`         |
 

@@ -20,6 +20,18 @@ int main() {
         }
     }
 
+    if (idrto::encode("user@example.com/db1.us-east/accounts-db") !=
+        "user-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb") {
+        std::cerr << "encode path example failed\n";
+        return 1;
+    }
+
+    if (idrto::decode("user-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb") !=
+        "user@example.com/db1.us-east/accounts-db") {
+        std::cerr << "decode path example failed\n";
+        return 1;
+    }
+
     if (idrto::decode("user-40example-2ecom") != "user@example.com") {
         std::cerr << "decode failed\n";
         return 1;

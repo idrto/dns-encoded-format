@@ -119,8 +119,8 @@ mod tests {
             ("ssh", "ssh"),
             ("postgres", "postgres"),
             (
-                "idrto:user@example.com/db1.us-east/accounts-db",
-                "idrto-3auser-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb",
+                "user@example.com/db1.us-east/accounts-db",
+                "user-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb",
             ),
             ("用户", "-e7-94-a8-e6-88-b7"),
             ("😊", "-f0-9f-98-8a"),
@@ -154,8 +154,8 @@ mod tests {
             ("alice", "alice"),
             ("user-40example-2ecom", "user@example.com"),
             (
-                "idrto-3auser-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb",
-                "idrto:user@example.com/db1.us-east/accounts-db",
+                "user-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb",
+                "user@example.com/db1.us-east/accounts-db",
             ),
             ("-e7-94-a8-e6-88-b7", "用户"),
             ("", ""),

@@ -10,33 +10,31 @@ Many resources are identified by URIs whose schemes are not HTTP or HTTPS—`idr
 
 To reach such resources through HTTPS infrastructure, the URI must be carried as a **fully qualified domain name (FQDN)** that a TLS client can resolve and advertise in the **Server Name Indication (SNI)** header during the handshake. SNI tells the server which hostname the client intends to reach, allowing it to present the right certificate and route the connection.
 
-DEF solves this by encoding the entire URI string into a single DNS label. That label becomes a subdomain of a gateway zone (for example `idr.to`), producing a valid hostname and HTTPS URL:
+DEF encodes the URI **payload** (the part after the scheme prefix) into a single DNS label. That label becomes a subdomain of a gateway zone (for example `idr.to`), producing a valid hostname and HTTPS URL:
 
 ```text
 <encoded-label>.idr.to
 ```
 
-A gateway at `idr.to` accepts the TLS connection, reads SNI, decodes the label, and recovers the original URI for routing—regardless of whether the original scheme was `idrto:`, `postgres:`, or anything else.
+The gateway zone implies the scheme—for `idr.to`, the scheme is `idrto` and is not encoded. A gateway accepts the TLS connection, reads SNI, decodes the label to recover the payload, and routes the request (prepending the implied scheme internally if needed).
 
 ## URI example with path slashes
 
 ```text
-Original URI:
-  idrto:user@example.com/db1.us-east/accounts-db
+URI payload (encoded):
+  user@example.com/db1.us-east/accounts-db
 
 Encoded label:
-  idrto-3auser-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb
+  user-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb
 
 FQDN:
-  idrto-3auser-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb.idr.to
+  user-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb.idr.to
 
 HTTPS URL:
-  https://idrto-3auser-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb.idr.to
+  https://user-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb.idr.to
 ```
 
-The client encodes the URI, connects to the FQDN over TLS with matching SNI, and the server decodes the label back to `idrto:user@example.com/db1.us-east/accounts-db`.
-
-DEF treats the URI as opaque text—it does not parse scheme, host, or path separately. Slashes, dots, and at-signs are escaped as `-2f`, `-2e`, and `-40` respectively.
+The logical URI `idrto:user@example.com/db1.us-east/accounts-db` is identified by encoding only the payload above. The `idrto:` scheme is implied by the `idr.to` zone, not included in the DEF input.
 
 ## Quick example
 

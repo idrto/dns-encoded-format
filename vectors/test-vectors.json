@@ -10,8 +10,8 @@
     { "input": "ssh", "encoded": "ssh" },
     { "input": "postgres", "encoded": "postgres" },
     {
-      "input": "idrto:user@example.com/db1.us-east/accounts-db",
-      "encoded": "idrto-3auser-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb"
+      "input": "user@example.com/db1.us-east/accounts-db",
+      "encoded": "user-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb"
     },
     { "input": "用户", "encoded": "-e7-94-a8-e6-88-b7" },
     { "input": "😊", "encoded": "-f0-9f-98-8a" },
@@ -35,8 +35,8 @@
     { "input": "alice", "decoded": "alice" },
     { "input": "user-40example-2ecom", "decoded": "user@example.com" },
     {
-      "input": "idrto-3auser-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb",
-      "decoded": "idrto:user@example.com/db1.us-east/accounts-db"
+      "input": "user-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb",
+      "decoded": "user@example.com/db1.us-east/accounts-db"
     },
     { "input": "-e7-94-a8-e6-88-b7", "decoded": "用户" },
     { "input": "", "decoded": "" },

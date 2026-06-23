@@ -6,7 +6,7 @@
 
 This document defines the **DNS Encoded Format (DEF)** used by idr.to to transform arbitrary Unicode strings into a DNS-friendly ASCII representation suitable for use as a single DNS label.
 
-The transformation is intended for identifier components such as user IDs, host names, service names, labels, and similar fields. A primary use case is encoding a URI (or URI-like string) into one valid DNS label while preserving UTF-8 text through encoding and decoding.
+The transformation is intended for identifier components such as entity IDs, host names, service names, labels, and similar fields. A primary use case is encoding a URI (or URI-like string) into one valid DNS label while preserving UTF-8 text through encoding and decoding.
 
 The encoding is deterministic and simple to parse.
 
@@ -288,7 +288,7 @@ Encoding the payload by segment:
 
 | Segment | Characters | Encoded fragment |
 | ------- | ---------- | ---------------- |
-| User | `user@` | `user-40` |
+| Entity | `user@` | `user-40` |
 | Host | `example.com` | `example-2ecom` |
 | Path | `/db1.us-east/accounts-db` | `-2fdb1-2eus-2deast-2faccounts-2ddb` |
 

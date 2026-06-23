@@ -183,18 +183,82 @@ decode(encode(x)) == lowercase_ascii(x)
 
 where `lowercase_ascii(x)` denotes `x` after converting only ASCII `A`–`Z` to `a`–`z`, for all inputs where `encode(x)` succeeds.
 
-## 12. URI Use Case
+## 12. URI Use Case: FQDNs for HTTPS and SNI
 
-DEF does not parse URI structure. To encode a URI into a DNS label, apply DEF to the full URI string.
+### 12.1 Problem
 
-Example:
+Many systems identify resources with URIs whose schemes are not HTTP or HTTPS—for example `idrto:`, `postgres:`, `ssh:`, or custom application schemes. These URIs can contain characters (`:`, `@`, `/`, `.`, `-`, and others) that are not valid in a DNS hostname.
+
+HTTPS, however, is built on DNS and TLS. A client connecting over TLS sends the target hostname in the **Server Name Indication (SNI)** extension during the handshake ([RFC 6066](https://www.rfc-editor.org/rfc/rfc6066)). The server uses that hostname to select the correct certificate and route the request.
+
+To reach a gateway or proxy over HTTPS while carrying a non-HTTP URI, the URI must be represented as a hostname the client can resolve, connect to, and advertise in SNI.
+
+### 12.2 Solution
+
+DEF maps an arbitrary URI string to a single DNS label. That label is placed as the leftmost label of a fully qualified domain name (FQDN) under a controlled zone (for example `idr.to`):
+
+```text
+<encoded-label>.idr.to
+```
+
+The result is a valid hostname suitable for:
+
+* DNS resolution (A/AAAA records),
+* TLS connections with a correct SNI value, and
+* HTTPS URLs of the form `https://<encoded-label>.idr.to/...`.
+
+The gateway at `idr.to` receives the TLS connection, reads the SNI hostname, extracts and decodes the embedded label, and recovers the original URI for routing to the appropriate backend or protocol handler.
+
+DEF does **not** parse URI structure. The entire URI string—including scheme, credentials, host, path segments, and slashes—is encoded as opaque text. Decoding restores the canonical lowercase ASCII form of that string.
+
+### 12.3 Worked Example
+
+Consider an idrto resource URI with path segments (slashes):
+
+```text
+Input URI:
+  idrto:user@example.com/db1.us-east/accounts-db
+```
+
+Apply DEF to the full string:
+
+| Step | Value |
+| ---- | ----- |
+| Canonical form | `idrto:user@example.com/db1.us-east/accounts-db` |
+| Encoded label (62 characters) | `idrto-3auser-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb` |
+| FQDN | `idrto-3auser-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb.idr.to` |
+| HTTPS URL | `https://idrto-3auser-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb.idr.to` |
+
+Character-by-character encoding of significant bytes:
+
+| Segment | Characters | Encoded fragment |
+| ------- | ---------- | ---------------- |
+| Scheme | `idrto:` | `idrto-3a` |
+| User | `user@` | `user-40` |
+| Host | `example.com` | `example-2ecom` |
+| Path | `/db1.us-east/accounts-db` | `-2fdb1-2eus-2deast-2faccounts-2ddb` |
+
+A client that wishes to access this resource over HTTPS:
+
+1. Encodes the URI with DEF.
+2. Forms the FQDN `<encoded>.idr.to`.
+3. Opens a TLS connection to that hostname, sending the same hostname in SNI.
+4. The server decodes the label and dispatches to the resource identified by `idrto:user@example.com/db1.us-east/accounts-db`.
+
+### 12.4 Simpler HTTPS URI Example
+
+For comparison, a conventional HTTPS URI encodes similarly:
 
 ```text
 Input:  https://Example.COM/path
 Output: https-3a-2f-2fexample-2ecom-2fpath
+FQDN:   https-3a-2f-2fexample-2ecom-2fpath.idr.to
+URL:    https://https-3a-2f-2fexample-2ecom-2fpath.idr.to
 ```
 
-If the encoded result exceeds 63 characters, the URI cannot be represented as a single DNS label using DEF.
+### 12.5 Length Constraint
+
+If the encoded label exceeds 63 characters, the URI cannot be represented as a single DNS label using DEF. Applications MUST handle this error or split the identifier across multiple labels using a separate convention outside this specification.
 
 ## 13. Examples
 
@@ -207,6 +271,7 @@ If the encoded result exceeds 63 characters, the URI cannot be represented as a 
 | `alice-1`          | `alice-2d1`            |
 | `ssh`              | `ssh`                  |
 | `postgres`         | `postgres`             |
+| `idrto:user@example.com/db1.us-east/accounts-db` | `idrto-3auser-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb` |
 | `用户`               | `-e7-94-a8-e6-88-b7`   |
 | `😊`               | `-f0-9f-98-8a`         |
 

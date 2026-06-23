@@ -23,6 +23,8 @@ class DefTest {
             case "label_too_long" -> Def.ErrorCode.LABEL_TOO_LONG;
             case "invalid_escape" -> Def.ErrorCode.INVALID_ESCAPE;
             case "invalid_utf8" -> Def.ErrorCode.INVALID_UTF8;
+            case "invalid_encoding" -> Def.ErrorCode.INVALID_ENCODING;
+            case "not_decodable" -> Def.ErrorCode.NOT_DECODABLE;
             default -> throw new IllegalArgumentException("unknown reason: " + reason);
         };
     }
@@ -30,6 +32,15 @@ class DefTest {
     @Test
     void encodeVectors() throws Exception {
         JsonArray cases = loadVectors().getAsJsonArray("encode");
+        for (var element : cases) {
+            JsonObject c = element.getAsJsonObject();
+            assertEquals(c.get("encoded").getAsString(), Def.encode(c.get("input").getAsString()));
+        }
+    }
+
+    @Test
+    void encodeHashVectors() throws Exception {
+        JsonArray cases = loadVectors().getAsJsonArray("encode_hash");
         for (var element : cases) {
             JsonObject c = element.getAsJsonObject();
             assertEquals(c.get("encoded").getAsString(), Def.encode(c.get("input").getAsString()));

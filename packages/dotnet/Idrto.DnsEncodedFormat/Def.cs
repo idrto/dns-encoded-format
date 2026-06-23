@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text;
 
 namespace Idrto.DnsEncodedFormat;
@@ -5,14 +6,20 @@ namespace Idrto.DnsEncodedFormat;
 public static class Def
 {
     public const int MaxLabelLength = 63;
+    public const int MaxDefBodyLength = 62;
+    public const char DefPrefix = 'd';
+    public const char HashPrefix = 'h';
 
+    private const string CrockfordAlphabet = "0123456789abcdefghjkmnpqrstvwxyz";
     private static readonly UTF8Encoding Utf8Strict = new(false, true);
 
     public enum ErrorCode
     {
         LabelTooLong,
         InvalidEscape,
-        InvalidUtf8
+        InvalidUtf8,
+        InvalidEncoding,
+        NotDecodable
     }
 
     public sealed class DefException : Exception
@@ -38,38 +45,75 @@ public static class Def
         return builder.ToString();
     }
 
-    private static void EnsureFits(int currentLen, int addLen)
+    private static string EncodeDefBody(byte[] bytes)
     {
-        if (currentLen + addLen > MaxLabelLength)
+        var builder = new StringBuilder();
+        foreach (var value in bytes)
+        {
+            if (IsLiteralByte(value))
+            {
+                builder.Append((char)value);
+            }
+            else
+            {
+                builder.Append($"-{value:x2}");
+            }
+        }
+        return builder.ToString();
+    }
+
+    private static string CrockfordBase32(byte[] data)
+    {
+        var builder = new StringBuilder();
+        var bits = 0;
+        var value = 0;
+
+        foreach (var b in data)
+        {
+            value = (value << 8) | b;
+            bits += 8;
+            while (bits >= 5)
+            {
+                builder.Append(CrockfordAlphabet[(value >> (bits - 5)) & 0x1f]);
+                bits -= 5;
+            }
+        }
+
+        if (bits > 0)
+        {
+            builder.Append(CrockfordAlphabet[(value << (5 - bits)) & 0x1f]);
+        }
+
+        return builder.ToString();
+    }
+
+    private static string EncodeHash(byte[] canonicalBytes)
+    {
+        var hash = SHA256.HashData(canonicalBytes);
+        var encoded = HashPrefix + CrockfordBase32(hash);
+        if (encoded.Length > MaxLabelLength)
         {
             throw new DefException("encoded label exceeds 63 characters", ErrorCode.LabelTooLong);
         }
+        return encoded;
     }
 
     public static string Encode(string input)
     {
         var bytes = Encoding.UTF8.GetBytes(Canonicalize(input));
-        var builder = new StringBuilder();
-        var currentLen = 0;
+        var body = EncodeDefBody(bytes);
 
-        foreach (var value in bytes)
+        if (body.Length <= MaxDefBodyLength)
         {
-            if (IsLiteralByte(value))
+            var encoded = DefPrefix + body;
+            if (encoded.Length > MaxLabelLength)
             {
-                EnsureFits(currentLen, 1);
-                builder.Append((char)value);
-                currentLen++;
+                throw new DefException("encoded label exceeds 63 characters", ErrorCode.LabelTooLong);
             }
-            else
-            {
-                var escape = $"-{value:x2}";
-                EnsureFits(currentLen, escape.Length);
-                builder.Append(escape);
-                currentLen += escape.Length;
-            }
+            return encoded;
         }
 
-        return builder.ToString();
+        return EncodeHash(Encoding.UTF8.GetBytes(body));
     }
 
     private static int? ParseHexByte(char h1, char h2)
@@ -86,17 +130,12 @@ public static class Def
         return hi is null || lo is null ? null : hi.Value * 16 + lo.Value;
     }
 
-    public static string Decode(string encoded)
+    private static string DecodeDefBody(string body)
     {
-        if (encoded.Length > MaxLabelLength)
+        var bytes = new List<byte>(body.Length);
+        for (var i = 0; i < body.Length;)
         {
-            throw new DefException("encoded label exceeds 63 characters", ErrorCode.LabelTooLong);
-        }
-
-        var bytes = new List<byte>(encoded.Length);
-        for (var i = 0; i < encoded.Length;)
-        {
-            var ch = encoded[i];
+            var ch = body[i];
             if (IsLiteralByte((byte)ch))
             {
                 bytes.Add((byte)ch);
@@ -109,12 +148,12 @@ public static class Def
                 throw new DefException("invalid character in encoded input", ErrorCode.InvalidEscape);
             }
 
-            if (i + 3 > encoded.Length)
+            if (i + 3 > body.Length)
             {
                 throw new DefException("truncated escape sequence", ErrorCode.InvalidEscape);
             }
 
-            var value = ParseHexByte(encoded[i + 1], encoded[i + 2]);
+            var value = ParseHexByte(body[i + 1], body[i + 2]);
             if (value is null)
             {
                 throw new DefException("invalid escape sequence", ErrorCode.InvalidEscape);
@@ -132,5 +171,25 @@ public static class Def
         {
             throw new DefException("invalid utf-8 byte sequence", ErrorCode.InvalidUtf8, ex);
         }
+    }
+
+    public static string Decode(string encoded)
+    {
+        if (encoded.Length > MaxLabelLength)
+        {
+            throw new DefException("encoded label exceeds 63 characters", ErrorCode.LabelTooLong);
+        }
+
+        if (encoded.Length == 0)
+        {
+            throw new DefException("missing encoding prefix", ErrorCode.InvalidEncoding);
+        }
+
+        return encoded[0] switch
+        {
+            HashPrefix => throw new DefException("hash-encoded label is not decodable", ErrorCode.NotDecodable),
+            DefPrefix => DecodeDefBody(encoded[1..]),
+            _ => throw new DefException("unrecognized encoding prefix", ErrorCode.InvalidEncoding)
+        };
     }
 }

@@ -15,6 +15,8 @@ public class DefTests
         "label_too_long" => Def.ErrorCode.LabelTooLong,
         "invalid_escape" => Def.ErrorCode.InvalidEscape,
         "invalid_utf8" => Def.ErrorCode.InvalidUtf8,
+        "invalid_encoding" => Def.ErrorCode.InvalidEncoding,
+        "not_decodable" => Def.ErrorCode.NotDecodable,
         _ => throw new ArgumentOutOfRangeException(nameof(reason), reason, null)
     };
 
@@ -23,6 +25,18 @@ public class DefTests
     {
         using var vectors = LoadVectors();
         foreach (var element in vectors.RootElement.GetProperty("encode").EnumerateArray())
+        {
+            var input = element.GetProperty("input").GetString()!;
+            var encoded = element.GetProperty("encoded").GetString()!;
+            Assert.Equal(encoded, Def.Encode(input));
+        }
+    }
+
+    [Fact]
+    public void EncodeHashVectors()
+    {
+        using var vectors = LoadVectors();
+        foreach (var element in vectors.RootElement.GetProperty("encode_hash").EnumerateArray())
         {
             var input = element.GetProperty("input").GetString()!;
             var encoded = element.GetProperty("encoded").GetString()!;

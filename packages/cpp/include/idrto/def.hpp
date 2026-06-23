@@ -29,6 +29,10 @@ private:
             return "invalid utf-8 byte sequence";
         case DEF_ERR_BUFFER_TOO_SMALL:
             return "output buffer too small";
+        case DEF_ERR_INVALID_ENCODING:
+            return "unrecognized or missing encoding prefix";
+        case DEF_ERR_NOT_DECODABLE:
+            return "hash-encoded label is not decodable";
         default:
             return "unknown def error";
         }

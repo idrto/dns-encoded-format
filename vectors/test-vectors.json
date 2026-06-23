@@ -1,57 +1,68 @@
 {
-  "version": "1.0",
+  "version": "1.1",
   "max_label_length": 63,
+  "max_def_body_length": 62,
   "encode": [
-    { "input": "alice", "encoded": "alice" },
-    { "input": "Alice", "encoded": "alice" },
-    { "input": "USER@example.COM", "encoded": "user-40example-2ecom" },
-    { "input": "Laptop.US-East", "encoded": "laptop-2eus-2deast" },
-    { "input": "alice-1", "encoded": "alice-2d1" },
-    { "input": "ssh", "encoded": "ssh" },
-    { "input": "postgres", "encoded": "postgres" },
+    { "input": "alice", "encoded": "dalice" },
+    { "input": "Alice", "encoded": "dalice" },
+    { "input": "USER@example.COM", "encoded": "duser-40example-2ecom" },
+    { "input": "Laptop.US-East", "encoded": "dlaptop-2eus-2deast" },
+    { "input": "alice-1", "encoded": "dalice-2d1" },
+    { "input": "ssh", "encoded": "dssh" },
+    { "input": "postgres", "encoded": "dpostgres" },
     {
       "input": "user@example.com/db1.us-east/accounts-db",
-      "encoded": "user-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb"
+      "encoded": "duser-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb"
     },
-    { "input": "用户", "encoded": "-e7-94-a8-e6-88-b7" },
-    { "input": "😊", "encoded": "-f0-9f-98-8a" },
-    { "input": "", "encoded": "" },
+    { "input": "用户", "encoded": "d-e7-94-a8-e6-88-b7" },
+    { "input": "😊", "encoded": "d-f0-9f-98-8a" },
+    { "input": "", "encoded": "d" },
     {
-      "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "encoded": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "encoded": "daaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     }
   ],
-  "encode_errors": [
+  "encode_hash": [
+    {
+      "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "encoded": "hfmz7982xfprnqkjav7p0cp7ak3hz0vqeswbb9hqzybd4azew5wt0"
+    },
     {
       "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "reason": "label_too_long"
+      "encoded": "hzzg59zktw35pvhjw7bwvc7aj17t3k18xpgygq9csecvxy5a6d3ng"
     },
     {
       "input": "😊😊😊😊😊😊😊😊😊😊😊😊😊😊😊😊",
-      "reason": "label_too_long"
+      "encoded": "hzg59ay0p9186j0ry5j789g4rqdz0vgbsbcarr7t4wbyq3rfxvpfg"
     }
   ],
+  "encode_errors": [],
   "decode": [
-    { "input": "alice", "decoded": "alice" },
-    { "input": "user-40example-2ecom", "decoded": "user@example.com" },
+    { "input": "dalice", "decoded": "alice" },
+    { "input": "duser-40example-2ecom", "decoded": "user@example.com" },
     {
-      "input": "user-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb",
+      "input": "duser-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb",
       "decoded": "user@example.com/db1.us-east/accounts-db"
     },
-    { "input": "-e7-94-a8-e6-88-b7", "decoded": "用户" },
-    { "input": "", "decoded": "" },
+    { "input": "d-e7-94-a8-e6-88-b7", "decoded": "用户" },
+    { "input": "d", "decoded": "" },
     {
-      "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "decoded": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      "input": "daaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "decoded": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     }
   ],
   "decode_errors": [
-    { "input": "abc-", "reason": "invalid_escape" },
-    { "input": "-gg", "reason": "invalid_escape" },
-    { "input": "-c0-80", "reason": "invalid_utf8" },
+    { "input": "alice", "reason": "invalid_encoding" },
+    { "input": "dabc-", "reason": "invalid_escape" },
+    { "input": "d-gg", "reason": "invalid_escape" },
+    { "input": "d-c0-80", "reason": "invalid_utf8" },
     {
-      "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "input": "daaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "reason": "label_too_long"
+    },
+    {
+      "input": "hfmz7982xfprnqkjav7p0cp7ak3hz0vqeswbb9hqzybd4azew5wt0",
+      "reason": "not_decodable"
     }
   ]
 }

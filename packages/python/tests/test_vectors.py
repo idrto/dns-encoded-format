@@ -21,6 +21,11 @@ def test_encode(case: dict[str, str]) -> None:
     assert encode(case["input"]) == case["encoded"]
 
 
+@pytest.mark.parametrize("case", VECTORS["encode_hash"], ids=lambda c: repr(c["input"]))
+def test_encode_hash(case: dict[str, str]) -> None:
+    assert encode(case["input"]) == case["encoded"]
+
+
 @pytest.mark.parametrize("case", VECTORS["encode_errors"], ids=lambda c: repr(c["input"]))
 def test_encode_errors(case: dict[str, str]) -> None:
     with pytest.raises(DefError) as exc:

@@ -4,37 +4,43 @@
 #include "idrto/def.hpp"
 
 int main() {
-    if (idrto::encode("alice") != "alice") {
+    if (idrto::encode("alice") != "dalice") {
         std::cerr << "encode alice failed\n";
         return 1;
     }
 
-    try {
-        idrto::encode(std::string(64, 'a'));
-        std::cerr << "expected label_too_long on encode\n";
+    const auto hashEncoded = idrto::encode(std::string(64, 'a'));
+    if (hashEncoded.empty() || hashEncoded[0] != 'h') {
+        std::cerr << "expected hash encoding for long input\n";
         return 1;
-    } catch (const idrto::DefError &err) {
-        if (err.status() != DEF_ERR_LABEL_TOO_LONG) {
-            std::cerr << "unexpected encode error\n";
-            return 1;
-        }
     }
 
     if (idrto::encode("user@example.com/db1.us-east/accounts-db") !=
-        "user-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb") {
+        "duser-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb") {
         std::cerr << "encode path example failed\n";
         return 1;
     }
 
-    if (idrto::decode("user-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb") !=
+    if (idrto::decode("duser-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb") !=
         "user@example.com/db1.us-east/accounts-db") {
         std::cerr << "decode path example failed\n";
         return 1;
     }
 
-    if (idrto::decode("user-40example-2ecom") != "user@example.com") {
+    if (idrto::decode("duser-40example-2ecom") != "user@example.com") {
         std::cerr << "decode failed\n";
         return 1;
+    }
+
+    try {
+        idrto::decode("hfmz7982xfprnqkjav7p0cp7ak3hz0vqeswbb9hqzybd4azew5wt0");
+        std::cerr << "expected not_decodable on hash decode\n";
+        return 1;
+    } catch (const idrto::DefError &err) {
+        if (err.status() != DEF_ERR_NOT_DECODABLE) {
+            std::cerr << "unexpected decode error\n";
+            return 1;
+        }
     }
 
     try {

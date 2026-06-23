@@ -4,19 +4,54 @@ Transform arbitrary Unicode strings into DNS-friendly ASCII labels (max **63 cha
 
 The specification lives in [docs/rfc.md](docs/rfc.md). Conformance vectors are in [vectors/test-vectors.json](vectors/test-vectors.json).
 
+Every encoded label begins with an **encoding-type prefix**:
+
+| Prefix | Meaning |
+| ------ | ------- |
+| `d` | Reversible DEF byte-escape encoding |
+| `h` | SHA-256 hash of the DEF body (Crockford Base32); **not decodable** |
+
+When the DEF body would exceed 62 characters, the encoder hashes the **DEF body** (after byte escaping, before any prefix) and emits `h` + Crockford Base32(SHA-256).
+
 ## Why DEF exists
 
 Many resources are identified by URIs whose schemes are not HTTP or HTTPS—`idrto:`, `postgres:`, `ssh:`, and other application-specific schemes. These URIs contain characters (`:`, `@`, `/`, `.`, and more) that cannot appear in a DNS hostname.
 
-To reach such resources through HTTPS infrastructure, the URI must be carried as a **fully qualified domain name (FQDN)** that a TLS client can resolve and advertise in the **Server Name Indication (SNI)** header during the handshake. SNI tells the server which hostname the client intends to reach, allowing it to present the right certificate and route the connection.
+DEF lets you take **any URI payload**, encode it into a single DNS label, and publish it under a zone such as `idr.to`. Clients resolve that name, connect over HTTPS, and the gateway recovers the original payload from the hostname.
 
-DEF encodes the URI **payload** (the part after the scheme prefix) into a single DNS label. That label becomes a subdomain of a gateway zone (for example `idr.to`), producing a valid hostname and HTTPS URL:
+## Publishing a URI in DNS
+
+1. Take the URI **payload** (without the scheme—for `idr.to`, omit `idrto:`).
+2. **DEF-encode** the payload (`d…` if it fits, `h…` if the DEF body is longer than 62 characters).
+3. **Publish** `<encoded-label>.idr.to` in DNS, or rely on a zone wildcard.
 
 ```text
-<encoded-label>.idr.to
+URI:           idrto:user@example.com/db1.us-east/accounts-db
+Payload:       user@example.com/db1.us-east/accounts-db
+DEF label:     duser-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb
+DNS name:      duser-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb.idr.to
+
+Zone wildcard (example):
+  *.idr.to.  IN  A     203.0.113.10
+  *.idr.to.  IN  AAAA  2001:db8::10
 ```
 
-The gateway zone implies the scheme—for `idr.to`, the scheme is `idrto` and is not encoded. A gateway accepts the TLS connection, reads SNI, decodes the label to recover the payload, and routes the request (prepending the implied scheme internally if needed).
+A wildcard covers every encoded label without creating a separate record per URI.
+
+## Client experience
+
+```text
+1. Encode payload:  user@example.com/db1.us-east/accounts-db
+                    → duser-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb
+2. Hostname:        duser-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb.idr.to
+3. DNS lookup:      returns 203.0.113.10, 2001:db8::10  (from *.idr.to)
+4. Connect to:      any returned A or AAAA address
+5. TLS SNI:         duser-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb.idr.to
+6. HTTP Host:       duser-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb.idr.to
+7. Server (nginx):  reads Host, DEF-decodes label → user@example.com/db1.us-east/accounts-db
+```
+
+The DEF label in **SNI** and the **Host** header identifies *which* URI the client wants. The client may connect to *any* IP returned for `*.idr.to`; the gateway uses the hostname to route, not the chosen address alone.
 
 ## URI example with path slashes
 
@@ -25,13 +60,13 @@ URI payload (encoded):
   user@example.com/db1.us-east/accounts-db
 
 Encoded label:
-  user-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb
+  duser-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb
 
 FQDN:
-  user-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb.idr.to
+  duser-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb.idr.to
 
 HTTPS URL:
-  https://user-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb.idr.to
+  https://duser-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb.idr.to
 ```
 
 The logical URI `idrto:user@example.com/db1.us-east/accounts-db` is identified by encoding only the payload above. The `idrto:` scheme is implied by the `idr.to` zone, not included in the DEF input.
@@ -39,11 +74,11 @@ The logical URI `idrto:user@example.com/db1.us-east/accounts-db` is identified b
 ## Quick example
 
 ```text
-encode("USER@example.COM")  →  user-40example-2ecom
-decode("user-40example-2ecom")  →  user@example.com
+encode("USER@example.COM")  →  duser-40example-2ecom
+decode("duser-40example-2ecom")  →  user@example.com
 ```
 
-Encoded output uses only `a-z`, `0-9`, and `-`, and MUST NOT exceed 63 characters.
+Encoded output uses only `a-z`, `0-9`, and `-`, begins with `d` (reversible) or `h` (hash of DEF body), and MUST NOT exceed 63 characters. Labels starting with `h` cannot be decoded.
 
 ## Packages
 

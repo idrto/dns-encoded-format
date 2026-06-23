@@ -7,3 +7,4 @@ description = "DNS Encoded Format (DEF) encoder and decoder"
 readme = "README.md"
 
 [dependencies]
+sha2 = "0.10"

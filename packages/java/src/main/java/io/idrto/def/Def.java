@@ -4,14 +4,23 @@ import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 
 public final class Def {
     public static final int MAX_LABEL_LENGTH = 63;
+    public static final int MAX_DEF_BODY_LENGTH = 62;
+    public static final char DEF_PREFIX = 'd';
+    public static final char HASH_PREFIX = 'h';
+
+    private static final String CROCKFORD_ALPHABET = "0123456789abcdefghjkmnpqrstvwxyz";
 
     public enum ErrorCode {
         LABEL_TOO_LONG,
         INVALID_ESCAPE,
-        INVALID_UTF8
+        INVALID_UTF8,
+        INVALID_ENCODING,
+        NOT_DECODABLE
     }
 
     public static final class DefException extends Exception {
@@ -46,32 +55,67 @@ public final class Def {
         return out.toString();
     }
 
-    private static void ensureFits(int currentLen, int addLen) throws DefException {
-        if (currentLen + addLen > MAX_LABEL_LENGTH) {
-            throw new DefException("encoded label exceeds 63 characters", ErrorCode.LABEL_TOO_LONG);
+    private static String encodeDefBody(byte[] bytes) {
+        StringBuilder out = new StringBuilder();
+        for (byte value : bytes) {
+            int unsigned = value & 0xff;
+            if (isLiteralByte(unsigned)) {
+                out.append((char) unsigned);
+            } else {
+                out.append(String.format("-%02x", unsigned));
+            }
+        }
+        return out.toString();
+    }
+
+    private static String crockfordBase32(byte[] data) {
+        StringBuilder out = new StringBuilder();
+        int bits = 0;
+        int value = 0;
+
+        for (byte b : data) {
+            value = (value << 8) | (b & 0xff);
+            bits += 8;
+            while (bits >= 5) {
+                out.append(CROCKFORD_ALPHABET.charAt((value >> (bits - 5)) & 0x1f));
+                bits -= 5;
+            }
+        }
+
+        if (bits > 0) {
+            out.append(CROCKFORD_ALPHABET.charAt((value << (5 - bits)) & 0x1f));
+        }
+
+        return out.toString();
+    }
+
+    private static String encodeHash(byte[] canonicalBytes) throws DefException {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(canonicalBytes);
+            String encoded = HASH_PREFIX + crockfordBase32(hash);
+            if (encoded.length() > MAX_LABEL_LENGTH) {
+                throw new DefException("encoded label exceeds 63 characters", ErrorCode.LABEL_TOO_LONG);
+            }
+            return encoded;
+        } catch (NoSuchAlgorithmException ex) {
+            throw new IllegalStateException("SHA-256 not available", ex);
         }
     }
 
     public static String encode(String input) throws DefException {
         byte[] bytes = canonicalize(input).getBytes(StandardCharsets.UTF_8);
-        StringBuilder out = new StringBuilder();
-        int currentLen = 0;
+        String body = encodeDefBody(bytes);
 
-        for (byte value : bytes) {
-            int unsigned = value & 0xff;
-            if (isLiteralByte(unsigned)) {
-                ensureFits(currentLen, 1);
-                out.append((char) unsigned);
-                currentLen++;
-            } else {
-                String escape = String.format("-%02x", unsigned);
-                ensureFits(currentLen, escape.length());
-                out.append(escape);
-                currentLen += escape.length();
+        if (body.length() <= MAX_DEF_BODY_LENGTH) {
+            String encoded = DEF_PREFIX + body;
+            if (encoded.length() > MAX_LABEL_LENGTH) {
+                throw new DefException("encoded label exceeds 63 characters", ErrorCode.LABEL_TOO_LONG);
             }
+            return encoded;
         }
 
-        return out.toString();
+        return encodeHash(body.getBytes(StandardCharsets.UTF_8));
     }
 
     private static Integer parseHexByte(char h1, char h2) {
@@ -93,16 +137,12 @@ public final class Def {
         return -1;
     }
 
-    public static String decode(String encoded) throws DefException {
-        if (encoded.length() > MAX_LABEL_LENGTH) {
-            throw new DefException("encoded label exceeds 63 characters", ErrorCode.LABEL_TOO_LONG);
-        }
-
-        byte[] out = new byte[encoded.length()];
+    private static String decodeDefBody(String body) throws DefException {
+        byte[] out = new byte[body.length()];
         int outLen = 0;
 
-        for (int i = 0; i < encoded.length(); ) {
-            char ch = encoded.charAt(i);
+        for (int i = 0; i < body.length(); ) {
+            char ch = body.charAt(i);
             if (isLiteralByte(ch)) {
                 out[outLen++] = (byte) ch;
                 i++;
@@ -112,11 +152,11 @@ public final class Def {
             if (ch != '-') {
                 throw new DefException("invalid character in encoded input", ErrorCode.INVALID_ESCAPE);
             }
-            if (i + 3 > encoded.length()) {
+            if (i + 3 > body.length()) {
                 throw new DefException("truncated escape sequence", ErrorCode.INVALID_ESCAPE);
             }
 
-            Integer value = parseHexByte(encoded.charAt(i + 1), encoded.charAt(i + 2));
+            Integer value = parseHexByte(body.charAt(i + 1), body.charAt(i + 2));
             if (value == null) {
                 throw new DefException("invalid escape sequence", ErrorCode.INVALID_ESCAPE);
             }
@@ -128,10 +168,30 @@ public final class Def {
         try {
             var decoder = StandardCharsets.UTF_8.newDecoder()
                     .onMalformedInput(CodingErrorAction.REPORT)
-                    .onUnmappableCharacter(CodingErrorAction.REPORT);
+                    .onUnmappedCharacter(CodingErrorAction.REPORT);
             return decoder.decode(ByteBuffer.wrap(out, 0, outLen)).toString();
         } catch (CharacterCodingException ex) {
             throw new DefException("invalid utf-8 byte sequence", ErrorCode.INVALID_UTF8);
         }
+    }
+
+    public static String decode(String encoded) throws DefException {
+        if (encoded.length() > MAX_LABEL_LENGTH) {
+            throw new DefException("encoded label exceeds 63 characters", ErrorCode.LABEL_TOO_LONG);
+        }
+
+        if (encoded.isEmpty()) {
+            throw new DefException("missing encoding prefix", ErrorCode.INVALID_ENCODING);
+        }
+
+        char prefix = encoded.charAt(0);
+        if (prefix == HASH_PREFIX) {
+            throw new DefException("hash-encoded label is not decodable", ErrorCode.NOT_DECODABLE);
+        }
+        if (prefix != DEF_PREFIX) {
+            throw new DefException("unrecognized encoding prefix", ErrorCode.INVALID_ENCODING);
+        }
+
+        return decodeDefBody(encoded.substring(1));
     }
 }

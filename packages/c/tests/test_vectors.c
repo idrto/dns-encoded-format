@@ -32,25 +32,31 @@ static def_status reason_to_status(const char *reason) {
     if (streq(reason, "invalid_utf8")) {
         return DEF_ERR_INVALID_UTF8;
     }
+    if (streq(reason, "invalid_encoding")) {
+        return DEF_ERR_INVALID_ENCODING;
+    }
+    if (streq(reason, "not_decodable")) {
+        return DEF_ERR_NOT_DECODABLE;
+    }
     return DEF_OK;
 }
 
 static int test_encode_cases(void) {
     encode_case cases[] = {
-        {"alice", "alice"},
-        {"Alice", "alice"},
-        {"USER@example.COM", "user-40example-2ecom"},
-        {"Laptop.US-East", "laptop-2eus-2deast"},
-        {"alice-1", "alice-2d1"},
-        {"ssh", "ssh"},
-        {"postgres", "postgres"},
+        {"alice", "dalice"},
+        {"Alice", "dalice"},
+        {"USER@example.COM", "duser-40example-2ecom"},
+        {"Laptop.US-East", "dlaptop-2eus-2deast"},
+        {"alice-1", "dalice-2d1"},
+        {"ssh", "dssh"},
+        {"postgres", "dpostgres"},
         {"user@example.com/db1.us-east/accounts-db",
-         "user-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb"},
-        {"用户", "-e7-94-a8-e6-88-b7"},
-        {"😊", "-f0-9f-98-8a"},
-        {"", ""},
-        {"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+         "duser-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb"},
+        {"用户", "d-e7-94-a8-e6-88-b7"},
+        {"😊", "d-f0-9f-98-8a"},
+        {"", "d"},
+        {"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+         "daaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
     };
 
     for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
@@ -69,19 +75,24 @@ static int test_encode_cases(void) {
     return 0;
 }
 
-static int test_encode_errors(void) {
-    error_case cases[] = {
+static int test_encode_hash_cases(void) {
+    encode_case cases[] = {
+        {"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+         "hfmz7982xfprnqkjav7p0cp7ak3hz0vqeswbb9hqzybd4azew5wt0"},
         {"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-         DEF_ERR_LABEL_TOO_LONG},
+         "hzzg59zktw35pvhjw7bwvc7aj17t3k18xpgygq9csecvxy5a6d3ng"},
     };
 
     for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
         char out[128];
         size_t out_len = 0;
         def_status status = def_encode(cases[i].input, out, sizeof(out), &out_len);
-        if (status != cases[i].expected) {
-            fprintf(stderr, "encode error mismatch for %s: got %d want %d\n", cases[i].input, status,
-                    cases[i].expected);
+        if (status != DEF_OK) {
+            fprintf(stderr, "encode failed for %s: %d\n", cases[i].input, status);
+            return 1;
+        }
+        if (!streq(out, cases[i].encoded)) {
+            fprintf(stderr, "encode(%s) = %s, want %s\n", cases[i].input, out, cases[i].encoded);
             return 1;
         }
     }
@@ -90,14 +101,14 @@ static int test_encode_errors(void) {
 
 static int test_decode_cases(void) {
     decode_case cases[] = {
-        {"alice", "alice"},
-        {"user-40example-2ecom", "user@example.com"},
-        {"user-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb",
+        {"dalice", "alice"},
+        {"duser-40example-2ecom", "user@example.com"},
+        {"duser-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb",
          "user@example.com/db1.us-east/accounts-db"},
-        {"-e7-94-a8-e6-88-b7", "用户"},
-        {"", ""},
-        {"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+        {"d-e7-94-a8-e6-88-b7", "用户"},
+        {"d", ""},
+        {"daaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
     };
 
     for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
@@ -121,11 +132,14 @@ static int test_decode_errors(void) {
         const char *input;
         def_status expected;
     } cases[] = {
-        {"abc-", DEF_ERR_INVALID_ESCAPE},
-        {"-gg", DEF_ERR_INVALID_ESCAPE},
-        {"-c0-80", DEF_ERR_INVALID_UTF8},
-        {"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        {"alice", DEF_ERR_INVALID_ENCODING},
+        {"dabc-", DEF_ERR_INVALID_ESCAPE},
+        {"d-gg", DEF_ERR_INVALID_ESCAPE},
+        {"d-c0-80", DEF_ERR_INVALID_UTF8},
+        {"daaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
          DEF_ERR_LABEL_TOO_LONG},
+        {"hfmz7982xfprnqkjav7p0cp7ak3hz0vqeswbb9hqzybd4azew5wt0",
+         DEF_ERR_NOT_DECODABLE},
     };
 
     for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
@@ -145,7 +159,7 @@ int main(void) {
     if (test_encode_cases() != 0) {
         return 1;
     }
-    if (test_encode_errors() != 0) {
+    if (test_encode_hash_cases() != 0) {
         return 1;
     }
     if (test_decode_cases() != 0) {

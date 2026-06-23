@@ -11,6 +11,7 @@ import (
 
 type vectorsFile struct {
 	Encode       []struct{ Input, Encoded string }
+	EncodeHash   []struct{ Input, Encoded string } `json:"encode_hash"`
 	EncodeErrors []struct{ Input, Reason string }
 	Decode       []struct{ Input, Decoded string }
 	DecodeErrors []struct{ Input, Reason string }
@@ -37,6 +38,10 @@ func reasonToError(reason string) error {
 		return def.ErrInvalidEscape
 	case "invalid_utf8":
 		return def.ErrInvalidUTF8
+	case "invalid_encoding":
+		return def.ErrInvalidEncoding
+	case "not_decodable":
+		return def.ErrNotDecodable
 	default:
 		t.Fatalf("unknown reason: %s", reason)
 		return nil
@@ -45,6 +50,18 @@ func reasonToError(reason string) error {
 
 func TestEncodeVectors(t *testing.T) {
 	for _, c := range loadVectors(t).Encode {
+		got, err := def.Encode(c.Input)
+		if err != nil {
+			t.Fatalf("encode(%q): %v", c.Input, err)
+		}
+		if got != c.Encoded {
+			t.Fatalf("encode(%q) = %q, want %q", c.Input, got, c.Encoded)
+		}
+	}
+}
+
+func TestEncodeHashVectors(t *testing.T) {
+	for _, c := range loadVectors(t).EncodeHash {
 		got, err := def.Encode(c.Input)
 		if err != nil {
 			t.Fatalf("encode(%q): %v", c.Input, err)

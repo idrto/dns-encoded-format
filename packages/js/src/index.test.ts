@@ -14,6 +14,7 @@ const vectorsPath = join(
 );
 const vectors = JSON.parse(readFileSync(vectorsPath, "utf8")) as {
   encode: Array<{ input: string; encoded: string }>;
+  encode_hash: Array<{ input: string; encoded: string }>;
   encode_errors: Array<{ input: string; reason: string }>;
   decode: Array<{ input: string; decoded: string }>;
   decode_errors: Array<{ input: string; reason: string }>;
@@ -22,6 +23,12 @@ const vectors = JSON.parse(readFileSync(vectorsPath, "utf8")) as {
 describe("encode", () => {
   for (const { input, encoded } of vectors.encode) {
     it(`encodes ${JSON.stringify(input)}`, () => {
+      expect(encode(input)).toBe(encoded);
+    });
+  }
+
+  for (const { input, encoded } of vectors.encode_hash) {
+    it(`hash-encodes ${JSON.stringify(input)}`, () => {
       expect(encode(input)).toBe(encoded);
     });
   }

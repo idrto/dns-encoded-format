@@ -1,10 +1,19 @@
+use sha2::{Digest, Sha256};
+
 pub const MAX_LABEL_LENGTH: usize = 63;
+pub const MAX_DEF_BODY_LENGTH: usize = 62;
+pub const DEF_PREFIX: char = 'd';
+pub const HASH_PREFIX: char = 'h';
+
+const CROCKFORD_ALPHABET: &[u8; 32] = b"0123456789abcdefghjkmnpqrstvwxyz";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DefError {
     LabelTooLong,
     InvalidEscape,
     InvalidUtf8,
+    InvalidEncoding,
+    NotDecodable,
 }
 
 impl std::fmt::Display for DefError {
@@ -13,6 +22,8 @@ impl std::fmt::Display for DefError {
             DefError::LabelTooLong => write!(f, "encoded label exceeds 63 characters"),
             DefError::InvalidEscape => write!(f, "invalid escape sequence"),
             DefError::InvalidUtf8 => write!(f, "invalid utf-8 byte sequence"),
+            DefError::InvalidEncoding => write!(f, "unrecognized or missing encoding prefix"),
+            DefError::NotDecodable => write!(f, "hash-encoded label is not decodable"),
         }
     }
 }
@@ -36,30 +47,66 @@ fn canonicalize(input: &str) -> String {
         .collect()
 }
 
-fn ensure_fits(current_len: usize, add_len: usize) -> Result<(), DefError> {
-    if current_len + add_len > MAX_LABEL_LENGTH {
+fn encode_def_body(bytes: &[u8]) -> String {
+    let mut out = String::new();
+    for byte in bytes {
+        if is_literal_byte(*byte) {
+            out.push(*byte as char);
+        } else {
+            out.push_str(&format!("-{byte:02x}"));
+        }
+    }
+    out
+}
+
+fn crockford_base32(data: &[u8]) -> String {
+    let mut out = String::new();
+    let mut bits = 0usize;
+    let mut value = 0u32;
+
+    for byte in data {
+        value = (value << 8) | u32::from(*byte);
+        bits += 8;
+        while bits >= 5 {
+            let index = ((value >> (bits - 5)) & 0x1f) as usize;
+            out.push(CROCKFORD_ALPHABET[index] as char);
+            bits -= 5;
+        }
+    }
+
+    if bits > 0 {
+        let index = ((value << (5 - bits)) & 0x1f) as usize;
+        out.push(CROCKFORD_ALPHABET[index] as char);
+    }
+
+    out
+}
+
+fn encode_hash(canonical_bytes: &[u8]) -> Result<String, DefError> {
+    let digest = Sha256::digest(canonical_bytes);
+    let encoded = format!("{HASH_PREFIX}{}", crockford_base32(&digest));
+    if encoded.len() > MAX_LABEL_LENGTH {
         Err(DefError::LabelTooLong)
     } else {
-        Ok(())
+        Ok(encoded)
     }
 }
 
 pub fn encode(input: &str) -> Result<String, DefError> {
     let canonical = canonicalize(input);
-    let mut out = String::new();
+    let bytes = canonical.as_bytes();
+    let body = encode_def_body(bytes);
 
-    for byte in canonical.as_bytes() {
-        if is_literal_byte(*byte) {
-            ensure_fits(out.len(), 1)?;
-            out.push(*byte as char);
+    if body.len() <= MAX_DEF_BODY_LENGTH {
+        let encoded = format!("{DEF_PREFIX}{body}");
+        if encoded.len() > MAX_LABEL_LENGTH {
+            Err(DefError::LabelTooLong)
         } else {
-            let escape = format!("-{byte:02x}");
-            ensure_fits(out.len(), escape.len())?;
-            out.push_str(&escape);
+            Ok(encoded)
         }
+    } else {
+        encode_hash(body.as_bytes())
     }
-
-    Ok(out)
 }
 
 fn parse_hex_byte(h1: u8, h2: u8) -> Option<u8> {
@@ -71,12 +118,8 @@ fn parse_hex_byte(h1: u8, h2: u8) -> Option<u8> {
     Some(to_nibble(h1)? * 16 + to_nibble(h2)?)
 }
 
-pub fn decode(encoded: &str) -> Result<String, DefError> {
-    if encoded.len() > MAX_LABEL_LENGTH {
-        return Err(DefError::LabelTooLong);
-    }
-
-    let bytes = encoded.as_bytes();
+fn decode_def_body(body: &str) -> Result<String, DefError> {
+    let bytes = body.as_bytes();
     let mut out = Vec::new();
     let mut i = 0;
 
@@ -104,6 +147,21 @@ pub fn decode(encoded: &str) -> Result<String, DefError> {
     String::from_utf8(out).map_err(|_| DefError::InvalidUtf8)
 }
 
+pub fn decode(encoded: &str) -> Result<String, DefError> {
+    if encoded.len() > MAX_LABEL_LENGTH {
+        return Err(DefError::LabelTooLong);
+    }
+
+    let mut chars = encoded.chars();
+    let prefix = chars.next().ok_or(DefError::InvalidEncoding)?;
+
+    match prefix {
+        HASH_PREFIX => Err(DefError::NotDecodable),
+        DEF_PREFIX => decode_def_body(&encoded[prefix.len_utf8()..]),
+        _ => Err(DefError::InvalidEncoding),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -111,23 +169,23 @@ mod tests {
     #[test]
     fn encode_vectors() {
         let cases = [
-            ("alice", "alice"),
-            ("Alice", "alice"),
-            ("USER@example.COM", "user-40example-2ecom"),
-            ("Laptop.US-East", "laptop-2eus-2deast"),
-            ("alice-1", "alice-2d1"),
-            ("ssh", "ssh"),
-            ("postgres", "postgres"),
+            ("alice", "dalice"),
+            ("Alice", "dalice"),
+            ("USER@example.COM", "duser-40example-2ecom"),
+            ("Laptop.US-East", "dlaptop-2eus-2deast"),
+            ("alice-1", "dalice-2d1"),
+            ("ssh", "dssh"),
+            ("postgres", "dpostgres"),
             (
                 "user@example.com/db1.us-east/accounts-db",
-                "user-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb",
+                "duser-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb",
             ),
-            ("用户", "-e7-94-a8-e6-88-b7"),
-            ("😊", "-f0-9f-98-8a"),
-            ("", ""),
+            ("用户", "d-e7-94-a8-e6-88-b7"),
+            ("😊", "d-f0-9f-98-8a"),
+            ("", "d"),
             (
-                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "daaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             ),
         ];
 
@@ -137,31 +195,31 @@ mod tests {
     }
 
     #[test]
-    fn encode_errors() {
+    fn encode_hash_vectors() {
         let cases = [(
-            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            DefError::LabelTooLong,
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "hfmz7982xfprnqkjav7p0cp7ak3hz0vqeswbb9hqzybd4azew5wt0",
         )];
 
         for (input, expected) in cases {
-            assert_eq!(encode(input).unwrap_err(), expected);
+            assert_eq!(encode(input).unwrap(), expected);
         }
     }
 
     #[test]
     fn decode_vectors() {
         let cases = [
-            ("alice", "alice"),
-            ("user-40example-2ecom", "user@example.com"),
+            ("dalice", "alice"),
+            ("duser-40example-2ecom", "user@example.com"),
             (
-                "user-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb",
+                "duser-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb",
                 "user@example.com/db1.us-east/accounts-db",
             ),
-            ("-e7-94-a8-e6-88-b7", "用户"),
-            ("", ""),
+            ("d-e7-94-a8-e6-88-b7", "用户"),
+            ("d", ""),
             (
-                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "daaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             ),
         ];
 
@@ -173,12 +231,17 @@ mod tests {
     #[test]
     fn decode_errors() {
         let cases = [
-            ("abc-", DefError::InvalidEscape),
-            ("-gg", DefError::InvalidEscape),
-            ("-c0-80", DefError::InvalidUtf8),
+            ("alice", DefError::InvalidEncoding),
+            ("dabc-", DefError::InvalidEscape),
+            ("d-gg", DefError::InvalidEscape),
+            ("d-c0-80", DefError::InvalidUtf8),
             (
-                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "daaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                 DefError::LabelTooLong,
+            ),
+            (
+                "hfmz7982xfprnqkjav7p0cp7ak3hz0vqeswbb9hqzybd4azew5wt0",
+                DefError::NotDecodable,
             ),
         ];
 

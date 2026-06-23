@@ -1,18 +1,28 @@
 package def
 
 import (
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"strings"
 	"unicode/utf8"
 )
 
-const MaxLabelLength = 63
+const (
+	MaxLabelLength    = 63
+	MaxDefBodyLength  = 62
+	DefPrefix         = "d"
+	HashPrefix        = "h"
+)
+
+const crockfordAlphabet = "0123456789abcdefghjkmnpqrstvwxyz"
 
 var (
-	ErrLabelTooLong   = errors.New("encoded label exceeds 63 characters")
-	ErrInvalidEscape  = errors.New("invalid escape sequence")
-	ErrInvalidUTF8    = errors.New("invalid utf-8 byte sequence")
+	ErrLabelTooLong     = errors.New("encoded label exceeds 63 characters")
+	ErrInvalidEscape    = errors.New("invalid escape sequence")
+	ErrInvalidUTF8      = errors.New("invalid utf-8 byte sequence")
+	ErrInvalidEncoding  = errors.New("unrecognized or missing encoding prefix")
+	ErrNotDecodable     = errors.New("hash-encoded label is not decodable")
 )
 
 func isLiteralByte(b byte) bool {
@@ -32,39 +42,62 @@ func canonicalize(input string) string {
 	return b.String()
 }
 
-func ensureFits(currentLen, addLen int) error {
-	if currentLen+addLen > MaxLabelLength {
-		return ErrLabelTooLong
+func encodeDefBody(bytes []byte) string {
+	var out strings.Builder
+	for _, b := range bytes {
+		if isLiteralByte(b) {
+			out.WriteByte(b)
+		} else {
+			out.WriteString(fmt.Sprintf("-%02x", b))
+		}
 	}
-	return nil
+	return out.String()
 }
 
-func Encode(input string) (string, error) {
+func crockfordBase32(data []byte) string {
 	var out strings.Builder
-	currentLen := 0
+	bits := 0
+	value := 0
 
-	for _, r := range canonicalize(input) {
-		buf := make([]byte, 4)
-		n := utf8.EncodeRune(buf, r)
-		for _, b := range buf[:n] {
-			if isLiteralByte(b) {
-				if err := ensureFits(currentLen, 1); err != nil {
-					return "", err
-				}
-				out.WriteByte(b)
-				currentLen++
-			} else {
-				esc := fmt.Sprintf("-%02x", b)
-				if err := ensureFits(currentLen, len(esc)); err != nil {
-					return "", err
-				}
-				out.WriteString(esc)
-				currentLen += len(esc)
-			}
+	for _, b := range data {
+		value = (value << 8) | int(b)
+		bits += 8
+		for bits >= 5 {
+			out.WriteByte(crockfordAlphabet[(value>>(bits-5))&0x1f])
+			bits -= 5
 		}
 	}
 
-	return out.String(), nil
+	if bits > 0 {
+		out.WriteByte(crockfordAlphabet[(value<<(5-bits))&0x1f])
+	}
+
+	return out.String()
+}
+
+func encodeHash(canonicalBytes []byte) (string, error) {
+	sum := sha256.Sum256(canonicalBytes)
+	encoded := HashPrefix + crockfordBase32(sum[:])
+	if len(encoded) > MaxLabelLength {
+		return "", ErrLabelTooLong
+	}
+	return encoded, nil
+}
+
+func Encode(input string) (string, error) {
+	canonical := canonicalize(input)
+	bytes := []byte(canonical)
+	body := encodeDefBody(bytes)
+
+	if len(body) <= MaxDefBodyLength {
+		encoded := DefPrefix + body
+		if len(encoded) > MaxLabelLength {
+			return "", ErrLabelTooLong
+		}
+		return encoded, nil
+	}
+
+	return encodeHash([]byte(body))
 }
 
 func parseHexByte(h1, h2 byte) (byte, bool) {
@@ -89,16 +122,11 @@ func parseHexByte(h1, h2 byte) (byte, bool) {
 	return hi*16 + lo, true
 }
 
-func Decode(encoded string) (string, error) {
-	if len(encoded) > MaxLabelLength {
-		return "", ErrLabelTooLong
-	}
+func decodeDefBody(body string) (string, error) {
+	out := make([]byte, 0, len(body))
 
-	bytes := []byte(encoded)
-	out := make([]byte, 0, len(bytes))
-
-	for i := 0; i < len(bytes); {
-		b := bytes[i]
+	for i := 0; i < len(body); {
+		b := body[i]
 		if isLiteralByte(b) {
 			out = append(out, b)
 			i++
@@ -107,10 +135,10 @@ func Decode(encoded string) (string, error) {
 		if b != '-' {
 			return "", ErrInvalidEscape
 		}
-		if i+3 > len(bytes) {
+		if i+3 > len(body) {
 			return "", ErrInvalidEscape
 		}
-		value, ok := parseHexByte(bytes[i+1], bytes[i+2])
+		value, ok := parseHexByte(body[i+1], body[i+2])
 		if !ok {
 			return "", ErrInvalidEscape
 		}
@@ -122,4 +150,23 @@ func Decode(encoded string) (string, error) {
 		return "", ErrInvalidUTF8
 	}
 	return string(out), nil
+}
+
+func Decode(encoded string) (string, error) {
+	if len(encoded) > MaxLabelLength {
+		return "", ErrLabelTooLong
+	}
+
+	if len(encoded) == 0 {
+		return "", ErrInvalidEncoding
+	}
+
+	switch encoded[0] {
+	case HashPrefix[0]:
+		return "", ErrNotDecodable
+	case DefPrefix[0]:
+		return decodeDefBody(encoded[1:])
+	default:
+		return "", ErrInvalidEncoding
+	}
 }

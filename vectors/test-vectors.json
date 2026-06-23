@@ -1,0 +1,49 @@
+{
+  "version": "1.0",
+  "max_label_length": 63,
+  "encode": [
+    { "input": "alice", "encoded": "alice" },
+    { "input": "Alice", "encoded": "alice" },
+    { "input": "USER@example.COM", "encoded": "user-40example-2ecom" },
+    { "input": "Laptop.US-East", "encoded": "laptop-2eus-2deast" },
+    { "input": "alice-1", "encoded": "alice-2d1" },
+    { "input": "ssh", "encoded": "ssh" },
+    { "input": "postgres", "encoded": "postgres" },
+    { "input": "用户", "encoded": "-e7-94-a8-e6-88-b7" },
+    { "input": "😊", "encoded": "-f0-9f-98-8a" },
+    { "input": "", "encoded": "" },
+    {
+      "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "encoded": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  ],
+  "encode_errors": [
+    {
+      "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "reason": "label_too_long"
+    },
+    {
+      "input": "😊😊😊😊😊😊😊😊😊😊😊😊😊😊😊😊",
+      "reason": "label_too_long"
+    }
+  ],
+  "decode": [
+    { "input": "alice", "decoded": "alice" },
+    { "input": "user-40example-2ecom", "decoded": "user@example.com" },
+    { "input": "-e7-94-a8-e6-88-b7", "decoded": "用户" },
+    { "input": "", "decoded": "" },
+    {
+      "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "decoded": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  ],
+  "decode_errors": [
+    { "input": "abc-", "reason": "invalid_escape" },
+    { "input": "-gg", "reason": "invalid_escape" },
+    { "input": "-c0-80", "reason": "invalid_utf8" },
+    {
+      "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "reason": "label_too_long"
+    }
+  ]
+}

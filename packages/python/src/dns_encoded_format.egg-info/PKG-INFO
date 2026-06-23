@@ -1,0 +1,10 @@
+Metadata-Version: 2.4
+Name: dns-encoded-format
+Version: 1.0.0
+Summary: DNS Encoded Format (DEF) encoder and decoder
+Author: idrto
+License: MIT
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+Provides-Extra: dev
+Requires-Dist: pytest>=8.0; extra == "dev"

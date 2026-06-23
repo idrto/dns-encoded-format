@@ -1,0 +1,8 @@
+pyproject.toml
+src/dns_encoded_format/__init__.py
+src/dns_encoded_format.egg-info/PKG-INFO
+src/dns_encoded_format.egg-info/SOURCES.txt
+src/dns_encoded_format.egg-info/dependency_links.txt
+src/dns_encoded_format.egg-info/requires.txt
+src/dns_encoded_format.egg-info/top_level.txt
+tests/test_vectors.py

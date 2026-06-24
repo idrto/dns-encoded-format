@@ -177,8 +177,8 @@ mod tests {
             ("ssh", "dssh"),
             ("postgres", "dpostgres"),
             (
-                "user@example.com/db1.us-east/accounts-db",
-                "duser-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb",
+                "laptop.us-east~user@example.com",
+                "dlaptop-2eus-2deast-7euser-40example-2ecom",
             ),
             ("用户", "d-e7-94-a8-e6-88-b7"),
             ("😊", "d-f0-9f-98-8a"),
@@ -212,8 +212,8 @@ mod tests {
             ("dalice", "alice"),
             ("duser-40example-2ecom", "user@example.com"),
             (
-                "duser-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb",
-                "user@example.com/db1.us-east/accounts-db",
+                "dlaptop-2eus-2deast-7euser-40example-2ecom",
+                "laptop.us-east~user@example.com",
             ),
             ("d-e7-94-a8-e6-88-b7", "用户"),
             ("d", ""),

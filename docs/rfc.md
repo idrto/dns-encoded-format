@@ -254,7 +254,14 @@ DEF maps a URI **payload** (the URI body without its scheme prefix) to a single 
 <encoded-label>.idr.to
 ```
 
-The gateway zone implies the URI scheme. For `idr.to`, the scheme is `idrto` and the `idrto:` prefix is **not** part of the encoded input. A logical URI such as `idrto:user@example.com/db1.us-east/accounts-db` is carried by encoding only `user@example.com/db1.us-east/accounts-db`.
+The gateway zone implies the URI scheme. For `idr.to`, the scheme is `idrto` and the `idrto:` prefix is **not** part of the encoded input.
+
+Under **idr.to URI grammar v1**, the DEF payload is the **identity locator** only: `<host>~<entity-id>`. Service, port, path, and query are **not** encoded in the DNS label; they appear in the HTTPS URL path after the hostname (see [idr.to URI v1](https://github.com/idrto/api/blob/main/openspec/URI.md)).
+
+A logical URI such as `idrto:laptop.us-east~user@example.com/accounts-db` is carried by:
+
+1. DEF-encoding the payload `laptop.us-east~user@example.com` into the leftmost DNS label, and
+2. Placing the service segment (`accounts-db`) in the HTTPS path: `https://<def-label>.idr.to/accounts-db`.
 
 The result is a valid hostname suitable for:
 
@@ -264,42 +271,43 @@ The result is a valid hostname suitable for:
 
 The gateway at `idr.to` receives the TLS connection, reads the SNI hostname, extracts and decodes the embedded label to recover the URI payload, and routes the request (prepending the implied scheme where needed).
 
-DEF does **not** parse URI structure. The payload—including credentials, host, path segments, and slashes—is encoded as opaque text. Decoding restores the canonical lowercase ASCII form of that payload.
+DEF does **not** parse URI structure beyond treating the payload as opaque text. For idr.to v1, publishers MUST encode only the identity locator (`host~entity-id`); decoders recover that locator and combine it with the HTTPS path to reconstruct the full idrto URI.
 
-### 12.3 Worked Example
+### 12.3 Worked Example (idr.to v1)
 
-Consider an idrto resource with path segments (slashes). The scheme is implied by the `idr.to` zone and is not encoded:
+Consider an idrto resource with a named service. The scheme is implied by the `idr.to` zone and is not encoded:
 
 ```text
-URI payload (input to DEF):
-  user@example.com/db1.us-east/accounts-db
+Identity locator (DEF payload):
+  laptop.us-east~user@example.com
 ```
 
 Apply DEF to the payload:
 
 | Step | Value |
 | ---- | ----- |
-| Canonical form | `user@example.com/db1.us-east/accounts-db` |
-| Encoded label (55 characters) | `duser-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb` |
-| FQDN | `duser-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb.idr.to` |
-| HTTPS URL | `https://duser-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb.idr.to` |
+| Canonical form | `laptop.us-east~user@example.com` |
+| Encoded label (38 characters) | `dlaptop-2eus-2deast-7euser-40example-2ecom` |
+| FQDN | `dlaptop-2eus-2deast-7euser-40example-2ecom.idr.to` |
+| HTTPS URL | `https://dlaptop-2eus-2deast-7euser-40example-2ecom.idr.to/accounts-db` |
 
 Encoding the payload by segment:
 
 | Segment | Characters | Encoded fragment |
 | ------- | ---------- | ---------------- |
-| Entity | `user@` | `user-40` |
-| Host | `example.com` | `example-2ecom` |
-| Path | `/db1.us-east/accounts-db` | `-2fdb1-2eus-2deast-2faccounts-2ddb` |
+| Host | `laptop.us-east` | `laptop-2eus-2deast` |
+| Delimiter | `~` | `-7e` |
+| Entity | `user@example.com` | `user-40example-2ecom` |
 
-The full logical URI `idrto:user@example.com/db1.us-east/accounts-db` is recovered by the gateway from the decoded payload and the zone-implied `idrto:` scheme.
+The full logical URI `idrto:laptop.us-east~user@example.com/accounts-db` is recovered by the gateway from the decoded identity locator, the zone-implied `idrto:` scheme, and the HTTPS path segment `accounts-db`.
 
 A client that wishes to access this resource over HTTPS:
 
-1. Takes the URI payload (everything after `idrto:`) and encodes it with DEF.
+1. Takes the identity locator (`host~entity-id`, everything between `idrto:` and the first `/` after the locator) and encodes it with DEF.
 2. Forms the FQDN `<encoded>.idr.to`.
 3. Opens a TLS connection to that hostname, sending the same hostname in SNI.
-4. The server decodes the label to `user@example.com/db1.us-east/accounts-db` and routes using the implied `idrto:` scheme.
+4. Issues an HTTP request whose path carries the service-or-port and optional path suffix (for example `/accounts-db`).
+5. The server decodes the label to `laptop.us-east~user@example.com`, parses the path for the service segment, and routes using the implied `idrto:` scheme.
 
 ### 12.4 Length Constraint
 
@@ -311,17 +319,18 @@ If a future encoding scheme cannot fit within 63 characters, the encoder MUST re
 
 Any party MAY take a URI payload, DEF-encode it, and publish the result as a DNS name under a DEF-enabled zone (for example `idr.to`):
 
-1. **Choose the payload.** Strip the scheme prefix if the zone implies it. For `idr.to`, encode `user@example.com/db1.us-east/accounts-db`, not `idrto:user@example.com/...`.
+1. **Choose the payload.** Strip the scheme prefix if the zone implies it. For `idr.to` v1, encode the identity locator only (`laptop.us-east~user@example.com`), not the service or path segments.
 2. **DEF-encode the payload.** Apply §9. Short payloads produce a reversible `d…` label; long payloads produce a deterministic `h…` label.
 3. **Publish DNS.** Create a record for `<encoded-label>.idr.to`. The record type depends on how clients reach the service—commonly `A`, `AAAA`, or `CNAME`. A **wildcard** such as `*.idr.to` MAY point many encoded names at one or more gateway addresses without per-label provisioning.
 
 Example publication:
 
 ```text
-URI:           idrto:user@example.com/db1.us-east/accounts-db
-Payload:       user@example.com/db1.us-east/accounts-db
-DEF label:     duser-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb
-DNS name:      duser-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb.idr.to
+URI:           idrto:laptop.us-east~user@example.com/accounts-db
+Payload:       laptop.us-east~user@example.com
+DEF label:     dlaptop-2eus-2deast-7euser-40example-2ecom
+DNS name:      dlaptop-2eus-2deast-7euser-40example-2ecom.idr.to
+HTTPS path:    /accounts-db
 DNS record:    *.idr.to.  IN  A     203.0.113.10
                *.idr.to.  IN  AAAA  2001:db8::10
 ```
@@ -332,28 +341,30 @@ The publisher does not need a separate record for each encoded label when a wild
 
 A client that wishes to use a published DEF name:
 
-1. **Encode** the URI payload with DEF (same algorithm as the publisher).
+1. **Encode** the identity locator with DEF (same algorithm as the publisher).
 2. **Form the hostname** `<encoded-label>.<zone>` (for example `…idr.to`).
 3. **Resolve DNS.** Query the hostname (or rely on the zone wildcard). The resolver MAY return multiple `A` and/or `AAAA` addresses.
 4. **Choose an address.** The client MAY connect to any returned address; all gateways behind the wildcard are expected to accept any valid DEF hostname for that zone.
 5. **Open TLS/HTTP** to that address while sending the full DEF hostname:
-   * **SNI** (TLS): the complete hostname (for example `duser-40example-2ecom-…idr.to`).
+   * **SNI** (TLS): the complete hostname (for example `dlaptop-2eus-2deast-7e…idr.to`).
    * **Host header** (HTTP): the same hostname once the connection is established.
+   * **Path** (HTTP): the service-or-port and optional path suffix from the idrto URI (for example `/accounts-db` or `/443/v1/health`).
 
-The receiving server (for example **nginx**) terminates TLS and routes using the `Host` header (or SNI during the handshake). It extracts the leftmost label, DEF-decodes it when the prefix is `d`, and recovers the URI payload. For `h` labels the server cannot decode the payload from DNS alone; it MUST match the label by digest or consult out-of-band state.
+The receiving server (for example **nginx**) terminates TLS and routes using the `Host` header (or SNI during the handshake). It extracts the leftmost label, DEF-decodes it when the prefix is `d`, and recovers the identity locator. It parses the HTTP path for the service segment and reconstructs the full idrto URI. For `h` labels the server cannot decode the payload from DNS alone; it MUST match the label by digest or consult out-of-band state.
 
 Worked client flow for the example above:
 
 ```text
-1. Payload:     user@example.com/db1.us-east/accounts-db
-2. DEF encode:  duser-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb
-3. Hostname:    duser-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb.idr.to
+1. Payload:     laptop.us-east~user@example.com
+2. DEF encode:  dlaptop-2eus-2deast-7euser-40example-2ecom
+3. Hostname:    dlaptop-2eus-2deast-7euser-40example-2ecom.idr.to
 4. DNS answer:  203.0.113.10, 2001:db8::10        (from *.idr.to)
 5. Client picks: 203.0.113.10
-6. TLS SNI:     duser-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb.idr.to
-7. HTTP Host:   duser-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb.idr.to
-8. Server decodes label → user@example.com/db1.us-east/accounts-db
-9. Logical URI: idrto:user@example.com/db1.us-east/accounts-db
+6. TLS SNI:     dlaptop-2eus-2deast-7euser-40example-2ecom.idr.to
+7. HTTP Host:   dlaptop-2eus-2deast-7euser-40example-2ecom.idr.to
+8. HTTP path:   /accounts-db
+9. Server decodes label → laptop.us-east~user@example.com
+10. Logical URI: idrto:laptop.us-east~user@example.com/accounts-db
 ```
 
 Wildcard DNS (`*.idr.to`) therefore separates **name discovery** (the unique DEF label in SNI/Host) from **endpoint selection** (which IP address the client connects to).
@@ -369,7 +380,7 @@ Wildcard DNS (`*.idr.to`) therefore separates **name discovery** (the unique DEF
 | `alice-1`          | `dalice-2d1`            |
 | `ssh`              | `dssh`                  |
 | `postgres`         | `dpostgres`             |
-| `user@example.com/db1.us-east/accounts-db` | `duser-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb` |
+| `laptop.us-east~user@example.com` | `dlaptop-2eus-2deast-7euser-40example-2ecom` |
 | `用户`               | `d-e7-94-a8-e6-88-b7`   |
 | `😊`               | `d-f0-9f-98-8a`         |
 

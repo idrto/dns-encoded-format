@@ -11,8 +11,8 @@
     { "input": "ssh", "encoded": "dssh" },
     { "input": "postgres", "encoded": "dpostgres" },
     {
-      "input": "user@example.com/db1.us-east/accounts-db",
-      "encoded": "duser-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb"
+      "input": "laptop.us-east~user@example.com",
+      "encoded": "dlaptop-2eus-2deast-7euser-40example-2ecom"
     },
     { "input": "用户", "encoded": "d-e7-94-a8-e6-88-b7" },
     { "input": "😊", "encoded": "d-f0-9f-98-8a" },
@@ -41,8 +41,8 @@
     { "input": "dalice", "decoded": "alice" },
     { "input": "duser-40example-2ecom", "decoded": "user@example.com" },
     {
-      "input": "duser-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb",
-      "decoded": "user@example.com/db1.us-east/accounts-db"
+      "input": "dlaptop-2eus-2deast-7euser-40example-2ecom",
+      "decoded": "laptop.us-east~user@example.com"
     },
     { "input": "d-e7-94-a8-e6-88-b7", "decoded": "用户" },
     { "input": "d", "decoded": "" },

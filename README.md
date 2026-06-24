@@ -26,10 +26,10 @@ DEF lets you take **any URI payload**, encode it into a single DNS label, and pu
 3. **Publish** `<encoded-label>.idr.to` in DNS, or rely on a zone wildcard.
 
 ```text
-URI:           idrto:user@example.com/db1.us-east/accounts-db
-Payload:       user@example.com/db1.us-east/accounts-db
-DEF label:     duser-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb
-DNS name:      duser-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb.idr.to
+URI:           idrto:laptop.us-east~user@example.com/accounts-db
+Payload:       laptop.us-east~user@example.com
+DEF label:     dlaptop-2eus-2deast-7euser-40example-2ecom
+DNS name:      dlaptop-2eus-2deast-7euser-40example-2ecom.idr.to
 
 Zone wildcard (example):
   *.idr.to.  IN  A     203.0.113.10
@@ -41,35 +41,37 @@ A wildcard covers every encoded label without creating a separate record per URI
 ## Client experience
 
 ```text
-1. Encode payload:  user@example.com/db1.us-east/accounts-db
-                    → duser-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb
-2. Hostname:        duser-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb.idr.to
+1. Encode payload:  laptop.us-east~user@example.com
+                    → dlaptop-2eus-2deast-7euser-40example-2ecom
+2. Hostname:        dlaptop-2eus-2deast-7euser-40example-2ecom.idr.to
 3. DNS lookup:      returns 203.0.113.10, 2001:db8::10  (from *.idr.to)
 4. Connect to:      any returned A or AAAA address
-5. TLS SNI:         duser-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb.idr.to
-6. HTTP Host:       duser-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb.idr.to
-7. Server (nginx):  reads Host, DEF-decodes label → user@example.com/db1.us-east/accounts-db
+5. TLS SNI:         dlaptop-2eus-2deast-7euser-40example-2ecom.idr.to
+6. HTTP Host:       dlaptop-2eus-2deast-7euser-40example-2ecom.idr.to
+7. Server (nginx):  reads Host, DEF-decodes label → laptop.us-east~user@example.com
 ```
 
 The DEF label in **SNI** and the **Host** header identifies *which* URI the client wants. The client may connect to *any* IP returned for `*.idr.to`; the gateway uses the hostname to route, not the chosen address alone.
 
-## URI example with path slashes
+## URI example (v1 identity locator)
+
+For idr.to relay ingress, the DEF payload is the **identity locator** only (`host~entity-id`). Service and path are carried in the HTTPS URL path.
 
 ```text
-URI payload (encoded):
-  user@example.com/db1.us-east/accounts-db
+Identity locator (DEF payload):
+  laptop.us-east~user@example.com
 
 Encoded label:
-  duser-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb
+  dlaptop-2eus-2deast-7euser-40example-2ecom
 
 FQDN:
-  duser-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb.idr.to
+  dlaptop-2eus-2deast-7euser-40example-2ecom.idr.to
 
-HTTPS URL:
-  https://duser-40example-2ecom-2fdb1-2eus-2deast-2faccounts-2ddb.idr.to
+HTTPS URL (service in path):
+  https://dlaptop-2eus-2deast-7euser-40example-2ecom.idr.to/accounts-db
 ```
 
-The logical URI `idrto:user@example.com/db1.us-east/accounts-db` is identified by encoding only the payload above. The `idrto:` scheme is implied by the `idr.to` zone, not included in the DEF input.
+Full idrto URI: `idrto:laptop.us-east~user@example.com/accounts-db` — scheme implied by zone; service/path not encoded in the label.
 
 ## Quick example
 

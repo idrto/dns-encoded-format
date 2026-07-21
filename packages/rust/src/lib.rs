@@ -5,7 +5,8 @@ pub const MAX_DEF_BODY_LENGTH: usize = 62;
 pub const DEF_PREFIX: char = 'd';
 pub const HASH_PREFIX: char = 'h';
 
-const CROCKFORD_ALPHABET: &[u8; 32] = b"0123456789abcdefghjkmnpqrstvwxyz";
+const BASE36_ALPHABET: &[u8; 36] = b"0123456789abcdefghijklmnopqrstuvwxyz";
+const HASH_BODY_LENGTH: usize = 50;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DefError {
@@ -59,32 +60,26 @@ fn encode_def_body(bytes: &[u8]) -> String {
     out
 }
 
-fn crockford_base32(data: &[u8]) -> String {
-    let mut out = String::new();
-    let mut bits = 0usize;
-    let mut value = 0u32;
+fn base36(data: &[u8]) -> String {
+    let mut buf = data.to_vec();
+    let mut digits = vec![b'0'; HASH_BODY_LENGTH];
 
-    for byte in data {
-        value = (value << 8) | u32::from(*byte);
-        bits += 8;
-        while bits >= 5 {
-            let index = ((value >> (bits - 5)) & 0x1f) as usize;
-            out.push(CROCKFORD_ALPHABET[index] as char);
-            bits -= 5;
+    for i in (0..HASH_BODY_LENGTH).rev() {
+        let mut rem: u32 = 0;
+        for byte in buf.iter_mut() {
+            let cur = (rem << 8) | u32::from(*byte);
+            *byte = (cur / 36) as u8;
+            rem = cur % 36;
         }
+        digits[i] = BASE36_ALPHABET[rem as usize];
     }
 
-    if bits > 0 {
-        let index = ((value << (5 - bits)) & 0x1f) as usize;
-        out.push(CROCKFORD_ALPHABET[index] as char);
-    }
-
-    out
+    String::from_utf8(digits).expect("base36 alphabet is ascii")
 }
 
 fn encode_hash(canonical_bytes: &[u8]) -> Result<String, DefError> {
     let digest = Sha256::digest(canonical_bytes);
-    let encoded = format!("{HASH_PREFIX}{}", crockford_base32(&digest));
+    let encoded = format!("{HASH_PREFIX}{}", base36(&digest));
     if encoded.len() > MAX_LABEL_LENGTH {
         Err(DefError::LabelTooLong)
     } else {
@@ -196,10 +191,20 @@ mod tests {
 
     #[test]
     fn encode_hash_vectors() {
-        let cases = [(
-            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            "hfmz7982xfprnqkjav7p0cp7ak3hz0vqeswbb9hqzybd4azew5wt0",
-        )];
+        let cases = [
+            (
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "h34dk0ez8tm7vyf659gc3tm7tfyv1n4fz6iqhx4wv7dte31ztx0",
+            ),
+            (
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "h6dl5vt15rq84vholfyw8vfmqsogsg52nitlm62npyv8po233zf",
+            ),
+            (
+                "😊😊😊😊😊😊😊😊😊😊😊😊😊😊😊😊",
+                "h6a5aelpmn14767b6y03tbo5tqkun7xcvazojsebqj825zwztsv",
+            ),
+        ];
 
         for (input, expected) in cases {
             assert_eq!(encode(input).unwrap(), expected);
@@ -240,7 +245,7 @@ mod tests {
                 DefError::LabelTooLong,
             ),
             (
-                "hfmz7982xfprnqkjav7p0cp7ak3hz0vqeswbb9hqzybd4azew5wt0",
+                "h34dk0ez8tm7vyf659gc3tm7tfyv1n4fz6iqhx4wv7dte31ztx0",
                 DefError::NotDecodable,
             ),
         ];

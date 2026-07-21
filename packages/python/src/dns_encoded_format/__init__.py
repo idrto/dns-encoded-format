@@ -9,7 +9,8 @@ MAX_DEF_BODY_LENGTH = 62
 DEF_PREFIX = "d"
 HASH_PREFIX = "h"
 
-CROCKFORD_ALPHABET = "0123456789abcdefghjkmnpqrstvwxyz"
+BASE36_ALPHABET = "0123456789abcdefghijklmnopqrstuvwxyz"
+HASH_BODY_LENGTH = 50
 
 
 class DefError(Exception):
@@ -36,27 +37,21 @@ def _encode_def_body(data: bytes) -> str:
     return "".join(out)
 
 
-def _crockford_base32(data: bytes) -> str:
-    bits = 0
-    value = 0
-    out: list[str] = []
+def _base36(data: bytes) -> str:
+    n = int.from_bytes(data, "big")
+    if n == 0:
+        return "0".rjust(HASH_BODY_LENGTH, "0")
 
-    for byte in data:
-        value = (value << 8) | byte
-        bits += 8
-        while bits >= 5:
-            out.append(CROCKFORD_ALPHABET[(value >> (bits - 5)) & 0x1F])
-            bits -= 5
-
-    if bits > 0:
-        out.append(CROCKFORD_ALPHABET[(value << (5 - bits)) & 0x1F])
-
-    return "".join(out)
+    digits: list[str] = []
+    while n:
+        n, rem = divmod(n, 36)
+        digits.append(BASE36_ALPHABET[rem])
+    return "".join(reversed(digits)).rjust(HASH_BODY_LENGTH, "0")
 
 
 def _encode_hash(canonical_bytes: bytes) -> str:
     digest = hashlib.sha256(canonical_bytes).digest()
-    encoded = HASH_PREFIX + _crockford_base32(digest)
+    encoded = HASH_PREFIX + _base36(digest)
     if len(encoded) > MAX_LABEL_LENGTH:
         raise DefError("encoded label exceeds 63 characters", "label_too_long")
     return encoded

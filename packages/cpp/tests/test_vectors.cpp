@@ -33,7 +33,7 @@ int main() {
     }
 
     try {
-        idrto::decode("hfmz7982xfprnqkjav7p0cp7ak3hz0vqeswbb9hqzybd4azew5wt0");
+        idrto::decode("h34dk0ez8tm7vyf659gc3tm7tfyv1n4fz6iqhx4wv7dte31ztx0");
         std::cerr << "expected not_decodable on hash decode\n";
         return 1;
     } catch (const idrto::DefError &err) {

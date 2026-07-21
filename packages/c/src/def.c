@@ -3,7 +3,8 @@
 #include <stdint.h>
 #include <string.h>
 
-static const char CROCKFORD_ALPHABET[] = "0123456789abcdefghjkmnpqrstvwxyz";
+static const char BASE36_ALPHABET[] = "0123456789abcdefghijklmnopqrstuvwxyz";
+static const size_t HASH_BODY_LENGTH = 50;
 
 static int is_literal_byte(unsigned char byte) {
     return (byte >= 0x61 && byte <= 0x7a) || (byte >= 0x30 && byte <= 0x39);
@@ -273,41 +274,37 @@ static void sha256_digest(const unsigned char *data, size_t len, unsigned char o
     sha256_final(&ctx, out);
 }
 
-static def_status crockford_base32_encode(
+static def_status base36_encode(
     const unsigned char *data,
     size_t len,
     char *output,
     size_t output_capacity,
     size_t *output_length
 ) {
-    size_t bits = 0;
-    uint32_t value = 0;
-    size_t out_len = 0;
+    unsigned char buf[32];
+    size_t i;
 
-    for (size_t i = 0; i < len; i++) {
-        value = (value << 8) | data[i];
-        bits += 8;
-        while (bits >= 5) {
-            if (out_len + 1 >= output_capacity) {
-                return DEF_ERR_BUFFER_TOO_SMALL;
-            }
-            output[out_len++] = CROCKFORD_ALPHABET[(value >> (bits - 5)) & 0x1f];
-            bits -= 5;
-        }
-    }
-
-    if (bits > 0) {
-        if (out_len + 1 >= output_capacity) {
-            return DEF_ERR_BUFFER_TOO_SMALL;
-        }
-        output[out_len++] = CROCKFORD_ALPHABET[(value << (5 - bits)) & 0x1f];
-    }
-
-    if (out_len + 1 >= output_capacity) {
+    if (len != 32) {
         return DEF_ERR_BUFFER_TOO_SMALL;
     }
-    output[out_len] = '\0';
-    *output_length = out_len;
+    if (output_capacity < HASH_BODY_LENGTH + 1) {
+        return DEF_ERR_BUFFER_TOO_SMALL;
+    }
+
+    memcpy(buf, data, len);
+
+    for (i = HASH_BODY_LENGTH; i > 0; i--) {
+        unsigned int rem = 0;
+        for (size_t j = 0; j < len; j++) {
+            unsigned int cur = (rem << 8) | buf[j];
+            buf[j] = (unsigned char)(cur / 36);
+            rem = cur % 36;
+        }
+        output[i - 1] = BASE36_ALPHABET[rem];
+    }
+
+    output[HASH_BODY_LENGTH] = '\0';
+    *output_length = HASH_BODY_LENGTH;
     return DEF_OK;
 }
 
@@ -360,7 +357,7 @@ static def_status encode_hash(
     }
     output[0] = HASH_PREFIX;
 
-    status = crockford_base32_encode(
+    status = base36_encode(
         digest,
         sizeof(digest),
         output + 1,

@@ -1,6 +1,6 @@
 # RFC: DNS Encoded Format
 
-**Version:** 1.1 (Draft)
+**Version:** 1.2 (Draft)
 
 ## 1. Purpose
 
@@ -51,16 +51,17 @@ When the DEF byte-escape body (§9, steps 1–4, without the prefix) would excee
 Hash encoding is:
 
 ```text
-h<crockford-base32-sha256>
+h<base36-sha256>
 ```
 
 where:
 
 * `h` is the hash-encoding prefix.
-* `crockford-base32-sha256` is the [Crockford Base32](https://www.crockford.com/base32.html) representation of the SHA-256 digest (32 octets) of the **DEF body** produced by §9 steps 3–4—the full byte-escape string *before* the `d` or `h` prefix is applied. The hash input is the UTF-8 encoding of that ASCII DEF body string.
-* Crockford Base32 output MUST use the lowercase alphabet `0123456789abcdefghjkmnpqrstvwxyz` (digits and letters only; no padding).
+* `base36-sha256` is the Base36 representation of the SHA-256 digest (32 octets) of the **DEF body** produced by §9 steps 3–4—the full byte-escape string *before* the `d` or `h` prefix is applied. The hash input is the UTF-8 encoding of that ASCII DEF body string.
+* Base36 output MUST use the lowercase alphabet `0123456789abcdefghijklmnopqrstuvwxyz`.
+* The digest SHALL be interpreted as a big-endian unsigned integer, converted to Base36 by repeated division by 36, and left-padded with `0` to exactly **50** characters (no other padding characters).
 
-A SHA-256 digest encodes to 52 Crockford Base32 characters, so the full label is 53 characters (`h` + 52) and always fits within the DNS limit.
+A SHA-256 digest encodes to 50 Base36 characters, so the full label is 51 characters (`h` + 50) and always fits within the DNS limit.
 
 Hash encoding is **one-way**. Implementations MUST NOT attempt to recover the original input from an `h`-prefixed label. Decoders MUST reject `h`-prefixed input with a `not_decodable` error (§10).
 
@@ -165,10 +166,10 @@ ESCAPE = "-" HEXDIG HEXDIG
 DEF_BODY = *( LITERAL / ESCAPE )
           ; length MUST NOT exceed 62 characters
 
-CROCKFORD = %x30-39 / %x61-67 / %x64-68 / %x6a-6b / %x6d-6e / %x70-74 / %x76-77 / %x78-7a
-           ; 0-9, a-h, j-k, m-n, p-t, v-z (lowercase Crockford alphabet)
+BASE36 = %x30-39 / %x61-7A
+        ; 0-9, a-z
 
-HASH_BODY = 52CROCKFORD
+HASH_BODY = 50BASE36
 
 ENCODED = "d" DEF_BODY
         / "h" HASH_BODY
@@ -186,8 +187,8 @@ Given an input Unicode string:
    * Otherwise emit `-` followed by exactly two lowercase hexadecimal digits.
 4. Concatenate the emitted tokens into a **DEF body** (without a prefix).
 5. If the DEF body length is 62 characters or fewer, emit `d` followed by the DEF body.
-6. Otherwise compute SHA-256 over the UTF-8 octets of the DEF body from step 4, encode the digest with lowercase Crockford Base32, and emit `h` followed by that string.
-7. If the result exceeds 63 characters, reject the input. (Step 6 always produces a 53-character label for hash encoding; step 5 is bounded by the 62-character DEF body limit.)
+6. Otherwise compute SHA-256 over the UTF-8 octets of the DEF body from step 4, encode the digest with lowercase Base36 (left-padded to 50 characters), and emit `h` followed by that string.
+7. If the result exceeds 63 characters, reject the input. (Step 6 always produces a 51-character label for hash encoding; step 5 is bounded by the 62-character DEF body limit.)
 
 ## 10. Decoding Algorithm
 

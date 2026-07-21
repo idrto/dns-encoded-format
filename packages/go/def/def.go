@@ -4,18 +4,20 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"math/big"
 	"strings"
 	"unicode/utf8"
 )
 
 const (
-	MaxLabelLength    = 63
-	MaxDefBodyLength  = 62
-	DefPrefix         = "d"
-	HashPrefix        = "h"
+	MaxLabelLength   = 63
+	MaxDefBodyLength = 62
+	DefPrefix        = "d"
+	HashPrefix       = "h"
+	hashBodyLength   = 50
 )
 
-const crockfordAlphabet = "0123456789abcdefghjkmnpqrstvwxyz"
+const base36Alphabet = "0123456789abcdefghijklmnopqrstuvwxyz"
 
 var (
 	ErrLabelTooLong     = errors.New("encoded label exceeds 63 characters")
@@ -54,30 +56,36 @@ func encodeDefBody(bytes []byte) string {
 	return out.String()
 }
 
-func crockfordBase32(data []byte) string {
-	var out strings.Builder
-	bits := 0
-	value := 0
-
-	for _, b := range data {
-		value = (value << 8) | int(b)
-		bits += 8
-		for bits >= 5 {
-			out.WriteByte(crockfordAlphabet[(value>>(bits-5))&0x1f])
-			bits -= 5
-		}
+func base36(data []byte) string {
+	n := new(big.Int).SetBytes(data)
+	if n.Sign() == 0 {
+		return strings.Repeat("0", hashBodyLength)
 	}
 
-	if bits > 0 {
-		out.WriteByte(crockfordAlphabet[(value<<(5-bits))&0x1f])
+	base := big.NewInt(36)
+	zero := big.NewInt(0)
+	rem := new(big.Int)
+	var digits []byte
+
+	for n.Cmp(zero) > 0 {
+		n.DivMod(n, base, rem)
+		digits = append(digits, base36Alphabet[rem.Int64()])
 	}
 
-	return out.String()
+	for i, j := 0, len(digits)-1; i < j; i, j = i+1, j-1 {
+		digits[i], digits[j] = digits[j], digits[i]
+	}
+
+	out := string(digits)
+	if len(out) < hashBodyLength {
+		out = strings.Repeat("0", hashBodyLength-len(out)) + out
+	}
+	return out
 }
 
 func encodeHash(canonicalBytes []byte) (string, error) {
 	sum := sha256.Sum256(canonicalBytes)
-	encoded := HashPrefix + crockfordBase32(sum[:])
+	encoded := HashPrefix + base36(sum[:])
 	if len(encoded) > MaxLabelLength {
 		return "", ErrLabelTooLong
 	}

@@ -1,5 +1,6 @@
 package io.idrto.def;
 
+import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CodingErrorAction;
@@ -13,7 +14,8 @@ public final class Def {
     public static final char DEF_PREFIX = 'd';
     public static final char HASH_PREFIX = 'h';
 
-    private static final String CROCKFORD_ALPHABET = "0123456789abcdefghjkmnpqrstvwxyz";
+    private static final String BASE36_ALPHABET = "0123456789abcdefghijklmnopqrstuvwxyz";
+    private static final int HASH_BODY_LENGTH = 50;
 
     public enum ErrorCode {
         LABEL_TOO_LONG,
@@ -68,24 +70,24 @@ public final class Def {
         return out.toString();
     }
 
-    private static String crockfordBase32(byte[] data) {
+    private static String base36(byte[] data) {
+        BigInteger n = new BigInteger(1, data);
+        if (n.signum() == 0) {
+            return "0".repeat(HASH_BODY_LENGTH);
+        }
+
         StringBuilder out = new StringBuilder();
-        int bits = 0;
-        int value = 0;
-
-        for (byte b : data) {
-            value = (value << 8) | (b & 0xff);
-            bits += 8;
-            while (bits >= 5) {
-                out.append(CROCKFORD_ALPHABET.charAt((value >> (bits - 5)) & 0x1f));
-                bits -= 5;
-            }
+        BigInteger base = BigInteger.valueOf(36);
+        while (n.signum() > 0) {
+            BigInteger[] divRem = n.divideAndRemainder(base);
+            out.append(BASE36_ALPHABET.charAt(divRem[1].intValue()));
+            n = divRem[0];
         }
 
-        if (bits > 0) {
-            out.append(CROCKFORD_ALPHABET.charAt((value << (5 - bits)) & 0x1f));
+        out.reverse();
+        while (out.length() < HASH_BODY_LENGTH) {
+            out.insert(0, '0');
         }
-
         return out.toString();
     }
 
@@ -93,7 +95,7 @@ public final class Def {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             byte[] hash = digest.digest(canonicalBytes);
-            String encoded = HASH_PREFIX + crockfordBase32(hash);
+            String encoded = HASH_PREFIX + base36(hash);
             if (encoded.length() > MAX_LABEL_LENGTH) {
                 throw new DefException("encoded label exceeds 63 characters", ErrorCode.LABEL_TOO_LONG);
             }

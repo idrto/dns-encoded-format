@@ -78,9 +78,9 @@ static int test_encode_cases(void) {
 static int test_encode_hash_cases(void) {
     encode_case cases[] = {
         {"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-         "hfmz7982xfprnqkjav7p0cp7ak3hz0vqeswbb9hqzybd4azew5wt0"},
+         "h34dk0ez8tm7vyf659gc3tm7tfyv1n4fz6iqhx4wv7dte31ztx0"},
         {"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-         "hzzg59zktw35pvhjw7bwvc7aj17t3k18xpgygq9csecvxy5a6d3ng"},
+         "h6dl5vt15rq84vholfyw8vfmqsogsg52nitlm62npyv8po233zf"},
     };
 
     for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
@@ -138,7 +138,7 @@ static int test_decode_errors(void) {
         {"d-c0-80", DEF_ERR_INVALID_UTF8},
         {"daaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
          DEF_ERR_LABEL_TOO_LONG},
-        {"hfmz7982xfprnqkjav7p0cp7ak3hz0vqeswbb9hqzybd4azew5wt0",
+        {"h34dk0ez8tm7vyf659gc3tm7tfyv1n4fz6iqhx4wv7dte31ztx0",
          DEF_ERR_NOT_DECODABLE},
     };
 

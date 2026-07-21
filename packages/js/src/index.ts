@@ -5,7 +5,8 @@ export const MAX_DEF_BODY_LENGTH = 62;
 export const DEF_PREFIX = "d";
 export const HASH_PREFIX = "h";
 
-const CROCKFORD_ALPHABET = "0123456789abcdefghjkmnpqrstvwxyz";
+const BASE36_ALPHABET = "0123456789abcdefghijklmnopqrstuvwxyz";
+const HASH_BODY_LENGTH = 50;
 
 export type DefErrorCode =
   | "label_too_long"
@@ -53,30 +54,28 @@ function encodeDefBody(bytes: Uint8Array): string {
   return out;
 }
 
-function crockfordBase32(data: Uint8Array): string {
-  let bits = 0;
-  let value = 0;
-  let out = "";
-
+function base36(data: Uint8Array): string {
+  let n = 0n;
   for (const byte of data) {
-    value = (value << 8) | byte;
-    bits += 8;
-    while (bits >= 5) {
-      out += CROCKFORD_ALPHABET[(value >>> (bits - 5)) & 0x1f]!;
-      bits -= 5;
-    }
+    n = (n << 8n) | BigInt(byte);
   }
 
-  if (bits > 0) {
-    out += CROCKFORD_ALPHABET[(value << (5 - bits)) & 0x1f]!;
+  if (n === 0n) {
+    return "0".padStart(HASH_BODY_LENGTH, "0");
   }
 
-  return out;
+  let out = "";
+  while (n > 0n) {
+    out = BASE36_ALPHABET[Number(n % 36n)]! + out;
+    n /= 36n;
+  }
+
+  return out.padStart(HASH_BODY_LENGTH, "0");
 }
 
 function encodeHash(canonicalBytes: Uint8Array): string {
   const digest = createHash("sha256").update(canonicalBytes).digest();
-  const encoded = HASH_PREFIX + crockfordBase32(digest);
+  const encoded = HASH_PREFIX + base36(digest);
   if (encoded.length > MAX_LABEL_LENGTH) {
     throw new DefError(
       "encoded label exceeds 63 characters",

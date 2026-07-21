@@ -9,9 +9,9 @@ Every encoded label begins with an **encoding-type prefix**:
 | Prefix | Meaning |
 | ------ | ------- |
 | `d` | Reversible DEF byte-escape encoding |
-| `h` | SHA-256 hash of the DEF body (Crockford Base32); **not decodable** |
+| `h` | SHA-256 hash of the DEF body (Base36); **not decodable** |
 
-When the DEF body would exceed 62 characters, the encoder hashes the **DEF body** (after byte escaping, before any prefix) and emits `h` + Crockford Base32(SHA-256).
+When the DEF body would exceed 62 characters, the encoder hashes the **DEF body** (after byte escaping, before any prefix) and emits `h` + Base36(SHA-256) (50 digits, left-padded with `0`).
 
 ## Why DEF exists
 

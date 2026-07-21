@@ -1,3 +1,4 @@
+using System.Numerics;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -10,7 +11,8 @@ public static class Def
     public const char DefPrefix = 'd';
     public const char HashPrefix = 'h';
 
-    private const string CrockfordAlphabet = "0123456789abcdefghjkmnpqrstvwxyz";
+    private const string Base36Alphabet = "0123456789abcdefghijklmnopqrstuvwxyz";
+    private const int HashBodyLength = 50;
     private static readonly UTF8Encoding Utf8Strict = new(false, true);
 
     public enum ErrorCode
@@ -62,35 +64,33 @@ public static class Def
         return builder.ToString();
     }
 
-    private static string CrockfordBase32(byte[] data)
+    private static string Base36(byte[] data)
     {
+        var n = new BigInteger(data, isUnsigned: true, isBigEndian: true);
+        if (n.IsZero)
+        {
+            return new string('0', HashBodyLength);
+        }
+
         var builder = new StringBuilder();
-        var bits = 0;
-        var value = 0;
-
-        foreach (var b in data)
+        while (n > 0)
         {
-            value = (value << 8) | b;
-            bits += 8;
-            while (bits >= 5)
-            {
-                builder.Append(CrockfordAlphabet[(value >> (bits - 5)) & 0x1f]);
-                bits -= 5;
-            }
+            n = BigInteger.DivRem(n, 36, out var rem);
+            builder.Append(Base36Alphabet[(int)rem]);
         }
 
-        if (bits > 0)
-        {
-            builder.Append(CrockfordAlphabet[(value << (5 - bits)) & 0x1f]);
-        }
-
-        return builder.ToString();
+        var chars = builder.ToString().ToCharArray();
+        Array.Reverse(chars);
+        var outValue = new string(chars);
+        return outValue.Length < HashBodyLength
+            ? new string('0', HashBodyLength - outValue.Length) + outValue
+            : outValue;
     }
 
     private static string EncodeHash(byte[] canonicalBytes)
     {
         var hash = SHA256.HashData(canonicalBytes);
-        var encoded = HashPrefix + CrockfordBase32(hash);
+        var encoded = HashPrefix + Base36(hash);
         if (encoded.Length > MaxLabelLength)
         {
             throw new DefException("encoded label exceeds 63 characters", ErrorCode.LabelTooLong);
@@ -167,9 +167,9 @@ public static class Def
         {
             return Utf8Strict.GetString(bytes.ToArray());
         }
-        catch (DecoderFallbackException ex)
+        catch (DecoderFallbackException)
         {
-            throw new DefException("invalid utf-8 byte sequence", ErrorCode.InvalidUtf8, ex);
+            throw new DefException("invalid utf-8 byte sequence", ErrorCode.InvalidUtf8);
         }
     }
 

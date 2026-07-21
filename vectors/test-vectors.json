@@ -1,5 +1,5 @@
 {
-  "version": "1.1",
+  "version": "1.2",
   "max_label_length": 63,
   "max_def_body_length": 62,
   "encode": [
@@ -25,15 +25,15 @@
   "encode_hash": [
     {
       "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "encoded": "hfmz7982xfprnqkjav7p0cp7ak3hz0vqeswbb9hqzybd4azew5wt0"
+      "encoded": "h34dk0ez8tm7vyf659gc3tm7tfyv1n4fz6iqhx4wv7dte31ztx0"
     },
     {
       "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "encoded": "hzzg59zktw35pvhjw7bwvc7aj17t3k18xpgygq9csecvxy5a6d3ng"
+      "encoded": "h6dl5vt15rq84vholfyw8vfmqsogsg52nitlm62npyv8po233zf"
     },
     {
       "input": "😊😊😊😊😊😊😊😊😊😊😊😊😊😊😊😊",
-      "encoded": "hzg59ay0p9186j0ry5j789g4rqdz0vgbsbcarr7t4wbyq3rfxvpfg"
+      "encoded": "h6a5aelpmn14767b6y03tbo5tqkun7xcvazojsebqj825zwztsv"
     }
   ],
   "encode_errors": [],
@@ -61,7 +61,7 @@
       "reason": "label_too_long"
     },
     {
-      "input": "hfmz7982xfprnqkjav7p0cp7ak3hz0vqeswbb9hqzybd4azew5wt0",
+      "input": "h34dk0ez8tm7vyf659gc3tm7tfyv1n4fz6iqhx4wv7dte31ztx0",
       "reason": "not_decodable"
     }
   ]

@@ -84,6 +84,15 @@ decode("duser-40example-2ecom")  →  user@example.com
 
 Encoded output uses only `a-z`, `0-9`, and `-`, begins with `d` (reversible) or `h` (hash of DEF body), and MUST NOT exceed 63 characters. Labels starting with `h` cannot be decoded.
 
+JavaScript `encode` is **async** (uses the Web Crypto API for `h…` labels; no Node crypto polyfill in browsers):
+
+```js
+import { encode, decode } from "@idrto/dns-encoded-format";
+
+const label = await encode("laptop.us-east~user@example.com");
+const host = `${label}.idr.to`;
+```
+
 ## Packages
 
 | Language | Path | Install |

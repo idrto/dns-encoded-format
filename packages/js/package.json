@@ -1,22 +1,24 @@
 {
   "name": "@idrto/dns-encoded-format",
-  "version": "1.0.0",
-  "description": "DNS Encoded Format (DEF) encoder and decoder",
+  "version": "2.0.0",
+  "description": "DNS Encoded Format (DEF) encoder and decoder (browser-friendly; Web Crypto for hash path)",
   "license": "MIT",
   "type": "module",
+  "sideEffects": false,
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
+      "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
-      "require": "./dist/index.cjs",
-      "types": "./dist/index.d.ts"
+      "require": "./dist/index.cjs"
     }
   },
+  "browser": "./dist/index.js",
   "files": ["dist"],
   "scripts": {
-    "build": "tsup src/index.ts --format esm,cjs --dts --clean",
+    "build": "tsup src/index.ts --format esm,cjs --dts --clean --target es2020",
     "test": "vitest run",
     "prepublishOnly": "npm run build"
   },

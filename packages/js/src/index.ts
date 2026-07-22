@@ -1,5 +1,3 @@
-import { createHash } from "node:crypto";
-
 export const MAX_LABEL_LENGTH = 63;
 export const MAX_DEF_BODY_LENGTH = 62;
 export const DEF_PREFIX = "d";
@@ -73,8 +71,19 @@ function base36(data: Uint8Array): string {
   return out.padStart(HASH_BODY_LENGTH, "0");
 }
 
-function encodeHash(canonicalBytes: Uint8Array): string {
-  const digest = createHash("sha256").update(canonicalBytes).digest();
+async function sha256(data: Uint8Array): Promise<Uint8Array> {
+  const subtle = globalThis.crypto?.subtle;
+  if (!subtle) {
+    throw new DefError(
+      "Web Crypto API (crypto.subtle) is required for hash encoding",
+      "invalid_encoding",
+    );
+  }
+  return new Uint8Array(await subtle.digest("SHA-256", data as BufferSource));
+}
+
+async function encodeHash(bodyBytes: Uint8Array): Promise<string> {
+  const digest = await sha256(bodyBytes);
   const encoded = HASH_PREFIX + base36(digest);
   if (encoded.length > MAX_LABEL_LENGTH) {
     throw new DefError(
@@ -85,7 +94,8 @@ function encodeHash(canonicalBytes: Uint8Array): string {
   return encoded;
 }
 
-export function encode(input: string): string {
+/** Encode input to a DEF label (`d…` or `h…`). Uses Web Crypto for hash path. */
+export async function encode(input: string): Promise<string> {
   const canonical = canonicalize(input);
   const bytes = new TextEncoder().encode(canonical);
   const body = encodeDefBody(bytes);

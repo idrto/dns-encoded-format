@@ -22,22 +22,20 @@ const vectors = JSON.parse(readFileSync(vectorsPath, "utf8")) as {
 
 describe("encode", () => {
   for (const { input, encoded } of vectors.encode) {
-    it(`encodes ${JSON.stringify(input)}`, () => {
-      expect(encode(input)).toBe(encoded);
+    it(`encodes ${JSON.stringify(input)}`, async () => {
+      await expect(encode(input)).resolves.toBe(encoded);
     });
   }
 
   for (const { input, encoded } of vectors.encode_hash) {
-    it(`hash-encodes ${JSON.stringify(input)}`, () => {
-      expect(encode(input)).toBe(encoded);
+    it(`hash-encodes ${JSON.stringify(input)}`, async () => {
+      await expect(encode(input)).resolves.toBe(encoded);
     });
   }
 
   for (const { input, reason } of vectors.encode_errors) {
-    it(`rejects encode ${JSON.stringify(input)} (${reason})`, () => {
-      expect(() => encode(input)).toThrowError(
-        expect.objectContaining({ code: reason }),
-      );
+    it(`rejects encode ${JSON.stringify(input)} (${reason})`, async () => {
+      await expect(encode(input)).rejects.toMatchObject({ code: reason });
     });
   }
 });
@@ -60,8 +58,8 @@ describe("decode", () => {
 
 describe("round trip", () => {
   for (const { input } of vectors.encode) {
-    it(`round trips ${JSON.stringify(input)}`, () => {
-      expect(decode(encode(input))).toBe(
+    it(`round trips ${JSON.stringify(input)}`, async () => {
+      expect(decode(await encode(input))).toBe(
         input.replace(/[A-Z]/g, (ch) => ch.toLowerCase()),
       );
     });

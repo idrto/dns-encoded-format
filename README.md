@@ -82,30 +82,6 @@ decode("duser-40example-2ecom")  →  user@example.com
 
 Encoded output uses only `a-z`, `0-9`, and `-`, begins with `d` (reversible) or `h` (hash of DEF body), and MUST NOT exceed 63 characters. Labels starting with `h` cannot be decoded.
 
-## JavaScript usage (browser)
-
-**[Open the interactive demo →](https://htmlpreview.github.io/?https://github.com/idrto/dns-encoded-format/blob/main/docs/try.html)**
-
-That link renders the forms in your browser. Opening [`docs/try.html`](docs/try.html) on github.com only shows source code.
-
-It provides:
-
-1. **String → DEF label** — enter any string, get the encoded DNS label.
-2. **String → FQHN** — enter a string and domain (default `idr.to`), get the fully qualified hostname.
-
-```js
-// Same helpers used by the demo (library import):
-import { encode } from "@idrto/dns-encoded-format";
-
-function toDef(input) {
-  return encode(input);
-}
-
-function toFqhn(input, domain = "idr.to") {
-  return `${encode(input)}.${domain}`;
-}
-```
-
 ## Packages
 
 | Language | Path | Install |

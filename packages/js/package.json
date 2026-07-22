@@ -22,7 +22,16 @@
   "scripts": {
     "build": "tsup src/index.ts --format esm,cjs --dts --clean --target es2020",
     "test": "vitest run",
+    "prepare": "npm run build",
     "prepublishOnly": "npm run build"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/idrto/dns-encoded-format.git",
+    "directory": "packages/js"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "devDependencies": {
     "@types/node": "^26.1.1",

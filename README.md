@@ -84,9 +84,9 @@ Encoded output uses only `a-z`, `0-9`, and `-`, begins with `d` (reversible) or 
 
 ## JavaScript usage (browser)
 
-Open the interactive demo in a browser (forms evaluate DEF encoding locally):
+**[Open the interactive demo →](https://cdn.jsdelivr.net/gh/idrto/dns-encoded-format@main/docs/try.html)**
 
-**[docs/try.html](docs/try.html)**
+GitHub’s code view only shows source. Use the link above (or download [docs/try.html](docs/try.html) and open it locally) to get the input forms.
 
 It provides:
 

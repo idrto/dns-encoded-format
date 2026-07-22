@@ -2,6 +2,8 @@
 
 Transform arbitrary Unicode strings into DNS-friendly ASCII labels (max **63 characters**) and back.
 
+**[Try it in the browser →](https://idrto.github.io/dns-encoded-format-demo/)** — encode a string to a DEF label or FQHN (`idr.to` by default).
+
 The specification lives in [docs/rfc.md](docs/rfc.md). Conformance vectors are in [vectors/test-vectors.json](vectors/test-vectors.json).
 
 Every encoded label begins with an **encoding-type prefix**:

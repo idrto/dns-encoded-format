@@ -82,33 +82,28 @@ decode("duser-40example-2ecom")  →  user@example.com
 
 Encoded output uses only `a-z`, `0-9`, and `-`, begins with `d` (reversible) or `h` (hash of DEF body), and MUST NOT exceed 63 characters. Labels starting with `h` cannot be decoded.
 
-## JavaScript usage
+## JavaScript usage (browser)
+
+Open the interactive demo in a browser (forms evaluate DEF encoding locally):
+
+**[docs/try.html](docs/try.html)**
+
+It provides:
+
+1. **String → DEF label** — enter any string, get the encoded DNS label.
+2. **String → FQHN** — enter a string and domain (default `idr.to`), get the fully qualified hostname.
 
 ```js
+// Same helpers used by the demo (library import):
 import { encode } from "@idrto/dns-encoded-format";
 
-/** Encode a string to a DEF DNS label. */
 function toDef(input) {
   return encode(input);
 }
 
-toDef("laptop.us-east~user@example.com");
-// → "dlaptop-2eus-2deast-7euser-40example-2ecom"
-```
-
-```js
-import { encode } from "@idrto/dns-encoded-format";
-
-/** Encode a string to a fully qualified hostname (default zone: idr.to). */
 function toFqhn(input, domain = "idr.to") {
   return `${encode(input)}.${domain}`;
 }
-
-toFqhn("laptop.us-east~user@example.com");
-// → "dlaptop-2eus-2deast-7euser-40example-2ecom.idr.to"
-
-toFqhn("laptop.us-east~user@example.com", "example.net");
-// → "dlaptop-2eus-2deast-7euser-40example-2ecom.example.net"
 ```
 
 ## Packages

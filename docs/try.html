@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DEF — try in browser</title>
+  <style>
+    :root {
+      --bg: #f6f4ef;
+      --ink: #1a1a1a;
+      --muted: #5c5c5c;
+      --line: #d8d2c4;
+      --accent: #0b5fff;
+      --panel: #fffdf8;
+      --ok: #0a7a3e;
+      --err: #b00020;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font: 16px/1.5 "Segoe UI", system-ui, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(ellipse at top left, #efe8d8 0%, transparent 55%),
+        var(--bg);
+      min-height: 100vh;
+    }
+    main {
+      max-width: 42rem;
+      margin: 0 auto;
+      padding: 2rem 1.25rem 3rem;
+    }
+    h1 {
+      font-size: 1.6rem;
+      margin: 0 0 0.35rem;
+      letter-spacing: -0.02em;
+    }
+    .lede {
+      color: var(--muted);
+      margin: 0 0 1.75rem;
+    }
+    section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 1.1rem 1.15rem 1.2rem;
+      margin-bottom: 1rem;
+    }
+    h2 {
+      font-size: 1.05rem;
+      margin: 0 0 0.85rem;
+    }
+    label {
+      display: block;
+      font-size: 0.85rem;
+      font-weight: 600;
+      margin-bottom: 0.3rem;
+    }
+    input[type="text"] {
+      width: 100%;
+      padding: 0.55rem 0.65rem;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      font: inherit;
+      background: #fff;
+      margin-bottom: 0.75rem;
+    }
+    input[type="text"]:focus {
+      outline: 2px solid color-mix(in srgb, var(--accent) 45%, white);
+      border-color: var(--accent);
+    }
+    button {
+      appearance: none;
+      border: 0;
+      border-radius: 6px;
+      background: var(--accent);
+      color: #fff;
+      font: inherit;
+      font-weight: 600;
+      padding: 0.5rem 0.9rem;
+      cursor: pointer;
+    }
+    button:hover { filter: brightness(1.05); }
+    .out {
+      margin-top: 0.9rem;
+      padding: 0.65rem 0.75rem;
+      border-radius: 6px;
+      background: #f0eee8;
+      border: 1px solid var(--line);
+      font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+      font-size: 0.9rem;
+      word-break: break-all;
+      min-height: 2.6rem;
+      white-space: pre-wrap;
+    }
+    .out.ok { color: var(--ok); }
+    .out.err { color: var(--err); }
+    footer {
+      margin-top: 1.25rem;
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+    a { color: var(--accent); }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>DNS Encoded Format</h1>
+    <p class="lede">
+      Type a string below. Encoding runs in your browser (no server).
+    </p>
+
+    <section>
+      <h2>1. String → DEF label</h2>
+      <form id="def-form">
+        <label for="def-input">Input string</label>
+        <input id="def-input" type="text" value="laptop.us-east~user@example.com" autocomplete="off" />
+        <button type="submit">Encode</button>
+      </form>
+      <div id="def-out" class="out" aria-live="polite"></div>
+    </section>
+
+    <section>
+      <h2>2. String → FQHN</h2>
+      <form id="fqhn-form">
+        <label for="fqhn-input">Input string</label>
+        <input id="fqhn-input" type="text" value="laptop.us-east~user@example.com" autocomplete="off" />
+        <label for="fqhn-domain">Domain</label>
+        <input id="fqhn-domain" type="text" value="idr.to" autocomplete="off" />
+        <button type="submit">Build FQHN</button>
+      </form>
+      <div id="fqhn-out" class="out" aria-live="polite"></div>
+    </section>
+
+    <footer>
+      Spec: <a href="./rfc.md">docs/rfc.md</a>
+      · Open this file locally in any modern browser.
+    </footer>
+  </main>
+
+  <script type="module">
+    const MAX_LABEL_LENGTH = 63;
+    const MAX_DEF_BODY_LENGTH = 62;
+    const DEF_PREFIX = "d";
+    const HASH_PREFIX = "h";
+    const BASE36_ALPHABET = "0123456789abcdefghijklmnopqrstuvwxyz";
+    const HASH_BODY_LENGTH = 50;
+
+    function isLiteralByte(byte) {
+      return (byte >= 0x61 && byte <= 0x7a) || (byte >= 0x30 && byte <= 0x39);
+    }
+
+    function canonicalize(input) {
+      let out = "";
+      for (let i = 0; i < input.length; i++) {
+        const code = input.charCodeAt(i);
+        out += code >= 0x41 && code <= 0x5a
+          ? String.fromCharCode(code + 32)
+          : input[i];
+      }
+      return out;
+    }
+
+    function encodeDefBody(bytes) {
+      let out = "";
+      for (const byte of bytes) {
+        out += isLiteralByte(byte)
+          ? String.fromCharCode(byte)
+          : `-${byte.toString(16).padStart(2, "0")}`;
+      }
+      return out;
+    }
+
+    function base36(data) {
+      let n = 0n;
+      for (const byte of data) n = (n << 8n) | BigInt(byte);
+      if (n === 0n) return "0".padStart(HASH_BODY_LENGTH, "0");
+      let out = "";
+      while (n > 0n) {
+        out = BASE36_ALPHABET[Number(n % 36n)] + out;
+        n /= 36n;
+      }
+      return out.padStart(HASH_BODY_LENGTH, "0");
+    }
+
+    async function encodeHash(bodyBytes) {
+      const digest = new Uint8Array(
+        await crypto.subtle.digest("SHA-256", bodyBytes),
+      );
+      const encoded = HASH_PREFIX + base36(digest);
+      if (encoded.length > MAX_LABEL_LENGTH) {
+        throw new Error("encoded label exceeds 63 characters");
+      }
+      return encoded;
+    }
+
+    async function encode(input) {
+      const bytes = new TextEncoder().encode(canonicalize(input));
+      const body = encodeDefBody(bytes);
+      if (body.length <= MAX_DEF_BODY_LENGTH) {
+        const encoded = DEF_PREFIX + body;
+        if (encoded.length > MAX_LABEL_LENGTH) {
+          throw new Error("encoded label exceeds 63 characters");
+        }
+        return encoded;
+      }
+      return encodeHash(new TextEncoder().encode(body));
+    }
+
+    async function toDef(input) {
+      return encode(input);
+    }
+
+    async function toFqhn(input, domain = "idr.to") {
+      const zone = (domain || "idr.to").trim() || "idr.to";
+      return `${await encode(input)}.${zone}`;
+    }
+
+    function show(el, text, ok) {
+      el.textContent = text;
+      el.className = `out ${ok ? "ok" : "err"}`;
+    }
+
+    const defOut = document.getElementById("def-out");
+    const fqhnOut = document.getElementById("fqhn-out");
+
+    document.getElementById("def-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const input = document.getElementById("def-input").value;
+      try {
+        show(defOut, await toDef(input), true);
+      } catch (err) {
+        show(defOut, err.message || String(err), false);
+      }
+    });
+
+    document.getElementById("fqhn-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const input = document.getElementById("fqhn-input").value;
+      const domain = document.getElementById("fqhn-domain").value;
+      try {
+        show(fqhnOut, await toFqhn(input, domain), true);
+      } catch (err) {
+        show(fqhnOut, err.message || String(err), false);
+      }
+    });
+
+    // Initial evaluation so the page shows results immediately.
+    document.getElementById("def-form").requestSubmit();
+    document.getElementById("fqhn-form").requestSubmit();
+  </script>
+</body>
+</html>

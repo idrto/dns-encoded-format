@@ -6,8 +6,10 @@
     "moduleResolution": "bundler",
     "strict": true,
     "declaration": true,
+    "rootDir": "./src",
     "outDir": "dist",
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "types": ["node"]
   },
   "include": ["src"]
 }

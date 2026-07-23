@@ -2,8 +2,6 @@ use sha2::{Digest, Sha256};
 
 pub const MAX_LABEL_LENGTH: usize = 63;
 pub const IDRTO_HASH_MARKER: &str = "idrto-h1--";
-pub const IDRTO_MARKER_HOST: &str = "idrto-h1";
-pub const RESERVED_HOST_XN: &str = "xn";
 pub const HASH_BODY_LENGTH: usize = 50;
 pub const STRUCTURAL_SEPARATOR: &str = "--";
 pub const STRUCTURAL_SEPARATOR_ESCAPED: &str = "-2d-2d";
@@ -17,7 +15,6 @@ pub enum DefError {
     InvalidEscape,
     InvalidUtf8,
     InvalidEncoding,
-    InvalidLocator,
     NotDecodable,
 }
 
@@ -28,7 +25,6 @@ impl std::fmt::Display for DefError {
             DefError::InvalidEscape => write!(f, "invalid escape sequence"),
             DefError::InvalidUtf8 => write!(f, "invalid utf-8 byte sequence"),
             DefError::InvalidEncoding => write!(f, "invalid profile label or marker"),
-            DefError::InvalidLocator => write!(f, "invalid profile locator"),
             DefError::NotDecodable => write!(f, "profile hash label is not decodable"),
         }
     }
@@ -42,10 +38,6 @@ fn is_literal_byte(byte: u8) -> bool {
 }
 
 #[inline]
-fn is_host_start(byte: u8) -> bool {
-    is_literal_byte(byte)
-}
-
 fn canonicalize_in_place(bytes: &mut [u8]) {
     for byte in bytes.iter_mut() {
         if (0x41..=0x5a).contains(byte) {
@@ -54,10 +46,18 @@ fn canonicalize_in_place(bytes: &mut [u8]) {
     }
 }
 
-pub fn encode_body(input: &str) -> String {
+pub fn encode_component(input: &str) -> String {
     let mut bytes = input.as_bytes().to_vec();
     canonicalize_in_place(&mut bytes);
     encode_bytes(&bytes)
+}
+
+pub fn encode_body(input: &str) -> String {
+    input
+        .split(STRUCTURAL_SEPARATOR)
+        .map(encode_component)
+        .collect::<Vec<_>>()
+        .join(STRUCTURAL_SEPARATOR)
 }
 
 fn encode_bytes(bytes: &[u8]) -> String {
@@ -84,8 +84,8 @@ fn parse_hex_byte(h1: u8, h2: u8) -> Option<u8> {
     Some(to_nibble(h1)? * 16 + to_nibble(h2)?)
 }
 
-pub fn decode_body(body: &str) -> Result<String, DefError> {
-    let bytes = body.as_bytes();
+pub fn decode_component(component: &str) -> Result<String, DefError> {
+    let bytes = component.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());
     let mut i = 0;
 
@@ -111,41 +111,11 @@ pub fn decode_body(body: &str) -> Result<String, DefError> {
     String::from_utf8(out).map_err(|_| DefError::InvalidUtf8)
 }
 
-fn marker_host_prefix(marker: &str) -> Result<&str, DefError> {
-    marker
-        .strip_suffix(STRUCTURAL_SEPARATOR)
-        .ok_or(DefError::InvalidEncoding)
-}
-
-fn validate_host(host: &str, marker: &str) -> Result<(), DefError> {
-    let marker_host = marker_host_prefix(marker)?;
-    if host == RESERVED_HOST_XN || host == marker_host {
-        return Err(DefError::InvalidLocator);
-    }
-    Ok(())
-}
-
-fn split_locator<'a>(locator: &'a str, marker: &str) -> Result<(&'a str, &'a str), DefError> {
-    let sep = locator
-        .find(STRUCTURAL_SEPARATOR)
-        .ok_or(DefError::InvalidLocator)?;
-    if sep == 0 || sep + 2 >= locator.len() {
-        return Err(DefError::InvalidLocator);
-    }
-
-    let host = &locator[..sep];
-    let entity = &locator[sep + 2..];
-    if entity.is_empty() {
-        return Err(DefError::InvalidLocator);
-    }
-
-    let host_bytes = host.as_bytes();
-    if host_bytes.is_empty() || !is_host_start(host_bytes[0]) {
-        return Err(DefError::InvalidLocator);
-    }
-
-    validate_host(host, marker)?;
-    Ok((host, entity))
+pub fn decode_body(body: &str) -> Result<String, DefError> {
+    body.split(STRUCTURAL_SEPARATOR)
+        .map(decode_component)
+        .collect::<Result<Vec<_>, _>>()
+        .map(|components| components.join(STRUCTURAL_SEPARATOR))
 }
 
 fn base36(data: &[u8]) -> String {
@@ -170,6 +140,9 @@ fn validate_marker(marker: &str) -> Result<(), DefError> {
         || marker.len() > 13
         || !marker.ends_with(STRUCTURAL_SEPARATOR)
         || marker.starts_with("xn--")
+        || !marker
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
     {
         return Err(DefError::InvalidEncoding);
     }
@@ -180,24 +153,19 @@ fn is_base36_byte(byte: u8) -> bool {
     (b'0'..=b'9').contains(&byte) || (b'a'..=b'z').contains(&byte)
 }
 
-pub fn encode_profile(locator: &str, marker: &str) -> Result<String, DefError> {
+pub fn encode_profile(input: &str, marker: &str) -> Result<String, DefError> {
     validate_marker(marker)?;
 
-    let mut canonical = locator.as_bytes().to_vec();
-    canonicalize_in_place(&mut canonical);
-    let canonical_text =
-        std::str::from_utf8(&canonical).map_err(|_| DefError::InvalidUtf8)?;
-    let (host, entity) = split_locator(canonical_text, marker)?;
+    let label = encode_body(input);
+    if label.is_empty() || label.starts_with('-') || label.ends_with('-') {
+        return Err(DefError::InvalidEncoding);
+    }
 
-    let host_body = encode_bytes(host.as_bytes());
-    let entity_body = encode_bytes(entity.as_bytes());
-    let label = format!("{host_body}{STRUCTURAL_SEPARATOR}{entity_body}");
-
-    if label.len() <= MAX_LABEL_LENGTH {
+    if label.len() <= MAX_LABEL_LENGTH && !label.starts_with(marker) {
         return Ok(label);
     }
 
-    let hash_input = format!("{host_body}{STRUCTURAL_SEPARATOR_ESCAPED}{entity_body}");
+    let hash_input = encode_component(input);
     let digest = Sha256::digest(hash_input.as_bytes());
     let encoded = format!("{marker}{}", base36(&digest));
     if encoded.len() > MAX_LABEL_LENGTH {
@@ -210,10 +178,6 @@ pub fn encode_profile(locator: &str, marker: &str) -> Result<String, DefError> {
 pub fn decode_profile(label: &str, marker: &str) -> Result<String, DefError> {
     validate_marker(marker)?;
 
-    if label.len() > MAX_LABEL_LENGTH {
-        return Err(DefError::LabelTooLong);
-    }
-
     if label.starts_with(marker) {
         let digest = &label[marker.len()..];
         if digest.len() != HASH_BODY_LENGTH || !digest.bytes().all(is_base36_byte) {
@@ -222,31 +186,18 @@ pub fn decode_profile(label: &str, marker: &str) -> Result<String, DefError> {
         return Err(DefError::NotDecodable);
     }
 
-    if label.starts_with("xn--") {
+    if label.len() > MAX_LABEL_LENGTH {
+        return Err(DefError::LabelTooLong);
+    }
+    if label.is_empty() || label.starts_with('-') || label.ends_with('-') {
         return Err(DefError::InvalidEncoding);
     }
 
-    let sep = label
-        .find(STRUCTURAL_SEPARATOR)
-        .ok_or(DefError::InvalidEncoding)?;
-    if sep == 0 || sep + 2 > label.len() {
-        return Err(DefError::InvalidEncoding);
-    }
-
-    let host = decode_body(&label[..sep])?;
-    let entity = decode_body(&label[sep + 2..])?;
-
-    if host.is_empty() || entity.is_empty() || host.contains(STRUCTURAL_SEPARATOR) {
-        return Err(DefError::InvalidLocator);
-    }
-
-    validate_host(&host, marker)?;
-
-    Ok(format!("{host}{STRUCTURAL_SEPARATOR}{entity}"))
+    decode_body(label)
 }
 
-pub fn encode(locator: &str) -> Result<String, DefError> {
-    encode_profile(locator, IDRTO_HASH_MARKER)
+pub fn encode(input: &str) -> Result<String, DefError> {
+    encode_profile(input, IDRTO_HASH_MARKER)
 }
 
 pub fn decode(label: &str) -> Result<String, DefError> {
@@ -261,6 +212,8 @@ mod tests {
 
     #[derive(serde::Deserialize)]
     struct Vectors {
+        encode_component: Vec<Case>,
+        decode_component: Vec<DecodeCase>,
         encode_body: Vec<Case>,
         decode_body: Vec<DecodeCase>,
         decode_body_errors: Vec<ErrorCase>,
@@ -290,9 +243,10 @@ mod tests {
     }
 
     fn load_vectors() -> Vectors {
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../vectors/test-vectors.json");
-        serde_json::from_str(&fs::read_to_string(path).expect("read vectors")).expect("parse vectors")
+        let path =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../vectors/test-vectors.json");
+        serde_json::from_str(&fs::read_to_string(path).expect("read vectors"))
+            .expect("parse vectors")
     }
 
     fn err(reason: &str) -> DefError {
@@ -301,7 +255,6 @@ mod tests {
             "invalid_escape" => DefError::InvalidEscape,
             "invalid_utf8" => DefError::InvalidUtf8,
             "invalid_encoding" => DefError::InvalidEncoding,
-            "invalid_locator" => DefError::InvalidLocator,
             "not_decodable" => DefError::NotDecodable,
             other => panic!("unknown reason: {other}"),
         }
@@ -311,6 +264,12 @@ mod tests {
     fn vectors() {
         let v = load_vectors();
 
+        for case in v.encode_component {
+            assert_eq!(encode_component(&case.input), case.encoded);
+        }
+        for case in v.decode_component {
+            assert_eq!(decode_component(&case.input).unwrap(), case.decoded);
+        }
         for case in v.encode_body {
             assert_eq!(encode_body(&case.input), case.encoded);
         }
@@ -350,5 +309,47 @@ mod tests {
                 err(&case.reason)
             );
         }
+    }
+
+    #[test]
+    fn deterministic_core_properties() {
+        let alphabet = ["", "a", "B", "-", "--", "@", "é", "用户", "😊"];
+        let mut values = alphabet.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        for left in alphabet {
+            for right in alphabet {
+                values.push(format!("{left}{right}"));
+                values.push(format!("{left}--{right}"));
+            }
+        }
+
+        for value in values {
+            let encoded = encode_body(&value);
+            assert_eq!(decode_body(&encoded).unwrap(), value.to_ascii_lowercase());
+            assert_eq!(
+                encoded.matches(STRUCTURAL_SEPARATOR).count(),
+                value.matches(STRUCTURAL_SEPARATOR).count()
+            );
+            assert!(!encode_component(&value).contains(STRUCTURAL_SEPARATOR));
+        }
+
+        assert_eq!(
+            decode_component(STRUCTURAL_SEPARATOR),
+            Err(DefError::InvalidEscape)
+        );
+    }
+
+    #[test]
+    fn generic_profile_contract() {
+        assert_eq!(encode("xn--value").unwrap(), "xn--value");
+        assert_eq!(decode("xn--value").unwrap(), "xn--value");
+
+        let marker = "abc--";
+        let collision = encode_profile("abc--value", marker).unwrap();
+        assert!(collision.starts_with(marker));
+        assert_eq!(collision.len(), marker.len() + HASH_BODY_LENGTH);
+        assert_eq!(
+            decode_profile(&collision, marker),
+            Err(DefError::NotDecodable)
+        );
     }
 }

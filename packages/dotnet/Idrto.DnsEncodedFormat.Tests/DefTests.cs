@@ -17,10 +17,33 @@ public class DefTests
         "invalid_escape" => Def.ErrorCode.InvalidEscape,
         "invalid_utf8" => Def.ErrorCode.InvalidUtf8,
         "invalid_encoding" => Def.ErrorCode.InvalidEncoding,
-        "invalid_locator" => Def.ErrorCode.InvalidLocator,
         "not_decodable" => Def.ErrorCode.NotDecodable,
         _ => throw new ArgumentOutOfRangeException(nameof(reason), reason, null)
     };
+
+    [Fact]
+    public void EncodeComponentVectors()
+    {
+        using var vectors = LoadVectors();
+        foreach (var element in vectors.RootElement.GetProperty("encode_component").EnumerateArray())
+        {
+            var input = element.GetProperty("input").GetString()!;
+            var encoded = element.GetProperty("encoded").GetString()!;
+            Assert.Equal(encoded, Def.EncodeComponent(input));
+        }
+    }
+
+    [Fact]
+    public void DecodeComponentVectors()
+    {
+        using var vectors = LoadVectors();
+        foreach (var element in vectors.RootElement.GetProperty("decode_component").EnumerateArray())
+        {
+            var input = element.GetProperty("input").GetString()!;
+            var decoded = element.GetProperty("decoded").GetString()!;
+            Assert.Equal(decoded, Def.DecodeComponent(input));
+        }
+    }
 
     [Fact]
     public void EncodeBodyVectors()
@@ -31,6 +54,46 @@ public class DefTests
             var input = element.GetProperty("input").GetString()!;
             var encoded = element.GetProperty("encoded").GetString()!;
             Assert.Equal(encoded, Def.EncodeBody(input));
+        }
+    }
+
+    [Fact]
+    public void DeterministicRoundTripsPreserveSeparators()
+    {
+        for (var i = 0; i < 256; i++)
+        {
+            var component = $"A{i}-x@用户{(char)('a' + i % 26)}";
+            var encodedComponent = Def.EncodeComponent(component);
+            Assert.DoesNotContain(Def.StructuralSeparator, encodedComponent);
+            Assert.Equal(component.ToLowerInvariant(), Def.DecodeComponent(encodedComponent));
+
+            var input = component
+                + string.Concat(Enumerable.Repeat(Def.StructuralSeparator, i % 4))
+                + (i % 3 == 0 ? "-" : "")
+                + $"B{255 - i}";
+            var encodedBody = Def.EncodeBody(input);
+            Assert.Equal(SeparatorCount(input), SeparatorCount(encodedBody));
+            Assert.Equal(input.ToLowerInvariant(), Def.DecodeBody(encodedBody));
+        }
+
+        var ex = Assert.Throws<Def.DefException>(() => Def.DecodeComponent("a--b"));
+        Assert.Equal(Def.ErrorCode.InvalidEscape, ex.Code);
+    }
+
+    private static int SeparatorCount(string value)
+    {
+        var count = 0;
+        var offset = 0;
+        while (true)
+        {
+            var found = value.IndexOf(Def.StructuralSeparator, offset, StringComparison.Ordinal);
+            if (found < 0)
+            {
+                return count;
+            }
+
+            count++;
+            offset = found + Def.StructuralSeparator.Length;
         }
     }
 
@@ -119,6 +182,19 @@ public class DefTests
             var ex = Assert.Throws<Def.DefException>(() => Def.DecodeProfile(input, Def.IdrtoHashMarker));
             Assert.Equal(ReasonToCode(reason), ex.Code);
         }
+    }
+
+    [Fact]
+    public void ProfileIsGenericAndHashesMarkerCollisions()
+    {
+        Assert.Equal("xn--name", Def.EncodeProfile("XN--Name"));
+        Assert.Equal("xn--name", Def.DecodeProfile("xn--name"));
+
+        const string marker = "abc--";
+        var collision = Def.EncodeProfile("abc--value", marker);
+        Assert.StartsWith(marker, collision);
+        var ex = Assert.Throws<Def.DefException>(() => Def.DecodeProfile(collision, marker));
+        Assert.Equal(Def.ErrorCode.NotDecodable, ex.Code);
     }
 
     [Fact]

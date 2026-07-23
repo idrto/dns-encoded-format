@@ -29,6 +29,8 @@ typedef struct {
 } error_list;
 
 typedef struct {
+    vector_list encode_component;
+    vector_list decode_component;
     vector_list encode_body;
     vector_list decode_body;
     error_list decode_body_errors;
@@ -55,9 +57,6 @@ static def_status reason_to_status(const char *reason) {
     }
     if (streq(reason, "invalid_encoding")) {
         return DEF_ERR_INVALID_ENCODING;
-    }
-    if (streq(reason, "invalid_locator")) {
-        return DEF_ERR_INVALID_LOCATOR;
     }
     if (streq(reason, "not_decodable")) {
         return DEF_ERR_NOT_DECODABLE;
@@ -86,6 +85,8 @@ static void free_error_list(error_list *list) {
 }
 
 static void free_vectors(test_vectors *vectors) {
+    free_vector_list(&vectors->encode_component);
+    free_vector_list(&vectors->decode_component);
     free_vector_list(&vectors->encode_body);
     free_vector_list(&vectors->decode_body);
     free_error_list(&vectors->decode_body_errors);
@@ -495,6 +496,18 @@ static int load_vectors(const char *path, test_vectors *vectors) {
         return 1;
     }
 
+    section = find_key_array(json, "encode_component");
+    if (section == NULL || parse_vector_cases(section, &vectors->encode_component) != 0) {
+        free(json);
+        return 1;
+    }
+
+    section = find_key_array(json, "decode_component");
+    if (section == NULL || parse_vector_cases(section, &vectors->decode_component) != 0) {
+        free(json);
+        return 1;
+    }
+
     section = find_key_array(json, "encode_body");
     if (section == NULL || parse_vector_cases(section, &vectors->encode_body) != 0) {
         free(json);
@@ -544,6 +557,85 @@ static int load_vectors(const char *path, test_vectors *vectors) {
     }
 
     free(json);
+    return 0;
+}
+
+static int test_encode_component_cases(const vector_list *cases) {
+    for (size_t i = 0; i < cases->count; i++) {
+        char out[256];
+        size_t out_len = 0;
+        def_status status = def_encode_component(cases->items[i].input, out, sizeof(out), &out_len);
+        if (status != DEF_OK || !streq(out, cases->items[i].value)) {
+            fprintf(stderr, "encode_component(%s) mismatch\n", cases->items[i].input);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int test_decode_component_cases(const vector_list *cases) {
+    for (size_t i = 0; i < cases->count; i++) {
+        char out[256];
+        size_t out_len = 0;
+        def_status status = def_decode_component(cases->items[i].input, out, sizeof(out), &out_len);
+        if (status != DEF_OK || !streq(out, cases->items[i].value)) {
+            fprintf(stderr, "decode_component(%s) mismatch\n", cases->items[i].input);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int test_representative_round_trips(void) {
+    const char *components[] = {"", "abc", "a-b", "--", "user@example.com", "\xc3\xa9", "\xe7\x94\xa8\xe6\x88\xb7"};
+    const char *bodies[] = {"abc", "a---b", "a----b", "a-----b", "a@--b", "\xc3\xa9--\xe7\x94\xa8\xe6\x88\xb7"};
+
+    for (size_t i = 0; i < sizeof(components) / sizeof(components[0]); i++) {
+        char encoded[256];
+        char decoded[256];
+        size_t encoded_len = 0;
+        size_t decoded_len = 0;
+        if (def_encode_component(components[i], encoded, sizeof(encoded), &encoded_len) != DEF_OK ||
+            def_decode_component(encoded, decoded, sizeof(decoded), &decoded_len) != DEF_OK ||
+            !streq(decoded, components[i])) {
+            fprintf(stderr, "component round trip failed for %s\n", components[i]);
+            return 1;
+        }
+    }
+
+    for (size_t i = 0; i < sizeof(bodies) / sizeof(bodies[0]); i++) {
+        char encoded[256];
+        char decoded[256];
+        size_t encoded_len = 0;
+        size_t decoded_len = 0;
+        if (def_encode_body(bodies[i], encoded, sizeof(encoded), &encoded_len) != DEF_OK ||
+            def_decode_body(encoded, decoded, sizeof(decoded), &decoded_len) != DEF_OK ||
+            !streq(decoded, bodies[i])) {
+            fprintf(stderr, "body round trip failed for %s\n", bodies[i]);
+            return 1;
+        }
+    }
+
+    {
+        char out[256];
+        size_t out_len = 0;
+        if (def_decode_component("--", out, sizeof(out), &out_len) != DEF_ERR_INVALID_ESCAPE) {
+            fprintf(stderr, "decode_component accepted a raw structural separator\n");
+            return 1;
+        }
+        if (def_decode_profile("xn--abc", DEF_IDRTO_HASH_MARKER, out, sizeof(out), &out_len) != DEF_OK ||
+            !streq(out, "xn--abc")) {
+            fprintf(stderr, "decode_profile rejected xn--\n");
+            return 1;
+        }
+        if (def_encode_profile("abc--value", "abc--", out, sizeof(out), &out_len) != DEF_OK ||
+            strncmp(out, "abc--", strlen("abc--")) != 0 ||
+            out_len != strlen("abc--") + DEF_HASH_BODY_LENGTH) {
+            fprintf(stderr, "encode_profile did not hash a marker-prefix collision\n");
+            return 1;
+        }
+    }
+
     return 0;
 }
 
@@ -713,6 +805,14 @@ int main(void) {
         return 1;
     }
 
+    if (test_encode_component_cases(&vectors.encode_component) != 0) {
+        free_vectors(&vectors);
+        return 1;
+    }
+    if (test_decode_component_cases(&vectors.decode_component) != 0) {
+        free_vectors(&vectors);
+        return 1;
+    }
     if (test_encode_body_cases(&vectors.encode_body) != 0) {
         free_vectors(&vectors);
         return 1;
@@ -742,6 +842,10 @@ int main(void) {
         return 1;
     }
     if (test_decode_profile_errors(&vectors.decode_profile_errors) != 0) {
+        free_vectors(&vectors);
+        return 1;
+    }
+    if (test_representative_round_trips() != 0) {
         free_vectors(&vectors);
         return 1;
     }

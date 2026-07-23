@@ -1,40 +1,84 @@
 {
-  "version": "1.3",
+  "version": "2.0",
   "max_label_length": 63,
   "idrto_hash_marker": "idrto-h1--",
-  "encode_body": [
-    { "input": "alice", "encoded": "alice" },
+  "encode_component": [
+    { "input": "", "encoded": "" },
+    { "input": "abc", "encoded": "abc" },
     { "input": "Alice", "encoded": "alice" },
+    { "input": "a-b", "encoded": "a-2db" },
+    { "input": "--", "encoded": "-2d-2d" },
+    { "input": "a--b", "encoded": "a-2d-2db" },
     { "input": "USER@example.COM", "encoded": "user-40example-2ecom" },
-    { "input": "Laptop.US-East", "encoded": "laptop-2eus-2deast" },
-    { "input": "alice-1", "encoded": "alice-2d1" },
-    { "input": "ssh", "encoded": "ssh" },
-    { "input": "postgres", "encoded": "postgres" },
     { "input": "用户", "encoded": "-e7-94-a8-e6-88-b7" },
-    { "input": "😊", "encoded": "-f0-9f-98-8a" },
-    { "input": "", "encoded": "" }
+    { "input": "😊", "encoded": "-f0-9f-98-8a" }
+  ],
+  "decode_component": [
+    { "input": "", "decoded": "" },
+    { "input": "a-2db", "decoded": "a-b" },
+    { "input": "-2d-2d", "decoded": "--" },
+    { "input": "user-40example-2ecom", "decoded": "user@example.com" },
+    { "input": "-e7-94-a8-e6-88-b7", "decoded": "用户" }
+  ],
+  "encode_body": [
+    { "input": "", "encoded": "" },
+    { "input": "abc", "encoded": "abc" },
+    { "input": "abc--xyz", "encoded": "abc--xyz" },
+    { "input": "abc--xyz--123", "encoded": "abc--xyz--123" },
+    { "input": "--abc", "encoded": "--abc" },
+    { "input": "abc--", "encoded": "abc--" },
+    { "input": "--", "encoded": "--" },
+    { "input": "----", "encoded": "----" },
+    { "input": "a----b", "encoded": "a----b" },
+    { "input": "a-b", "encoded": "a-2db" },
+    { "input": "a---b", "encoded": "a---2db" },
+    { "input": "a-----b", "encoded": "a-----2db" },
+    { "input": "é--x", "encoded": "-c3-a9--x" },
+    { "input": "x--用户", "encoded": "x---e7-94-a8-e6-88-b7" },
+    { "input": "é--用户", "encoded": "-c3-a9---e7-94-a8-e6-88-b7" },
+    { "input": "a@--b", "encoded": "a-40--b" },
+    { "input": "a--@b", "encoded": "a---40b" },
+    { "input": "USER@example.COM", "encoded": "user-40example-2ecom" },
+    { "input": "😊", "encoded": "-f0-9f-98-8a" }
   ],
   "decode_body": [
-    { "input": "alice", "decoded": "alice" },
-    { "input": "user-40example-2ecom", "decoded": "user@example.com" },
-    { "input": "-e7-94-a8-e6-88-b7", "decoded": "用户" },
-    { "input": "", "decoded": "" }
+    { "input": "", "decoded": "" },
+    { "input": "abc--xyz", "decoded": "abc--xyz" },
+    { "input": "abc--xyz--123", "decoded": "abc--xyz--123" },
+    { "input": "--abc", "decoded": "--abc" },
+    { "input": "abc--", "decoded": "abc--" },
+    { "input": "--", "decoded": "--" },
+    { "input": "----", "decoded": "----" },
+    { "input": "a----b", "decoded": "a----b" },
+    { "input": "a---2db", "decoded": "a---b" },
+    { "input": "a-----2db", "decoded": "a-----b" },
+    { "input": "-2d-2d", "decoded": "--" },
+    { "input": "-c3-a9---e7-94-a8-e6-88-b7", "decoded": "é--用户" },
+    { "input": "a-40--b", "decoded": "a@--b" },
+    { "input": "a---40b", "decoded": "a--@b" }
   ],
   "decode_body_errors": [
     { "input": "abc-", "reason": "invalid_escape" },
     { "input": "-gg", "reason": "invalid_escape" },
-    { "input": "-c0-80", "reason": "invalid_utf8" }
+    { "input": "-2D", "reason": "invalid_escape" },
+    { "input": "-c0-80", "reason": "invalid_utf8" },
+    { "input": "abc---gg", "reason": "invalid_escape" },
+    { "input": "abc-2--x", "reason": "invalid_escape" },
+    { "input": "abc---c0-80", "reason": "invalid_utf8" }
   ],
   "encode_profile": [
+    { "input": "alpha", "encoded": "alpha" },
     { "input": "s--acme", "encoded": "s--acme" },
     { "input": "S--Acme", "encoded": "s--acme" },
+    { "input": "alpha--beta--v1", "encoded": "alpha--beta--v1" },
+    { "input": "a----b", "encoded": "a----b" },
     {
       "input": "laptop.us-east--user@example.com",
       "encoded": "laptop-2eus-2deast--user-40example-2ecom"
     },
     {
-      "input": "api-v2--acme--production",
-      "encoded": "api-2dv2--acme-2d-2dproduction"
+      "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa--bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "encoded": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa--bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
     }
   ],
   "encode_profile_hash": [
@@ -44,31 +88,29 @@
     }
   ],
   "encode_profile_errors": [
-    { "input": "hostonly", "reason": "invalid_locator" },
-    { "input": "--entity", "reason": "invalid_locator" },
-    { "input": "host--", "reason": "invalid_locator" },
-    { "input": "-bad--entity", "reason": "invalid_locator" },
-    { "input": "xn--test", "reason": "invalid_locator" },
-    { "input": "idrto-h1--entity", "reason": "invalid_locator" }
+    { "input": "", "reason": "invalid_encoding" },
+    { "input": "--component", "reason": "invalid_encoding" },
+    { "input": "component--", "reason": "invalid_encoding" },
+    { "input": "--", "reason": "invalid_encoding" }
   ],
   "decode_profile": [
+    { "input": "alpha", "decoded": "alpha" },
     { "input": "s--acme", "decoded": "s--acme" },
+    { "input": "alpha--beta--v1", "decoded": "alpha--beta--v1" },
+    { "input": "a----b", "decoded": "a----b" },
     {
       "input": "laptop-2eus-2deast--user-40example-2ecom",
       "decoded": "laptop.us-east--user@example.com"
-    },
-    {
-      "input": "api-2dv2--acme-2d-2dproduction",
-      "decoded": "api-v2--acme--production"
     }
   ],
   "decode_profile_errors": [
-    { "input": "hostonly", "reason": "invalid_encoding" },
+    { "input": "", "reason": "invalid_encoding" },
+    { "input": "--component", "reason": "invalid_encoding" },
+    { "input": "component--", "reason": "invalid_encoding" },
+    { "input": "abc---gg", "reason": "invalid_escape" },
     {
       "input": "idrto-h1--3mug7fre5lope7l4qxk6cb7wrekhkhk0ey25dr5d9z3bg7tbqa",
       "reason": "not_decodable"
-    },
-    { "input": "xn--acme--user", "reason": "invalid_encoding" },
-    { "input": "a-2d-2db--c", "reason": "invalid_locator" }
+    }
   ]
 }

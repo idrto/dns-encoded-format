@@ -9,10 +9,7 @@ extern "C" {
 
 #define DEF_MAX_LABEL_LENGTH 63
 #define DEF_IDRTO_HASH_MARKER "idrto-h1--"
-#define DEF_IDRTO_MARKER_HOST "idrto-h1"
-#define DEF_RESERVED_HOST_XN "xn"
 #define DEF_HASH_BODY_LENGTH 50
-#define DEF_STRUCTURAL_SEPARATOR "--"
 #define DEF_STRUCTURAL_SEPARATOR "--"
 
 typedef enum {
@@ -22,9 +19,22 @@ typedef enum {
     DEF_ERR_INVALID_UTF8 = 3,
     DEF_ERR_BUFFER_TOO_SMALL = 4,
     DEF_ERR_INVALID_ENCODING = 5,
-    DEF_ERR_INVALID_LOCATOR = 6,
     DEF_ERR_NOT_DECODABLE = 7
 } def_status;
+
+def_status def_encode_component(
+    const char *input,
+    char *output,
+    size_t output_capacity,
+    size_t *output_length
+);
+
+def_status def_decode_component(
+    const char *component,
+    char *output,
+    size_t output_capacity,
+    size_t *output_length
+);
 
 def_status def_encode_body(
     const char *input,
@@ -41,7 +51,7 @@ def_status def_decode_body(
 );
 
 def_status def_encode_profile(
-    const char *locator,
+    const char *input,
     const char *marker,
     char *output,
     size_t output_capacity,
@@ -57,7 +67,7 @@ def_status def_decode_profile(
 );
 
 def_status def_encode(
-    const char *locator,
+    const char *input,
     char *output,
     size_t output_capacity,
     size_t *output_length

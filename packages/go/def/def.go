@@ -13,11 +13,9 @@ import (
 const (
 	MaxLabelLength              = 63
 	IdrtoHashMarker             = "idrto-h1--"
-	IdrtoMarkerHost             = "idrto-h1"
-	ReservedHostXn              = "xn"
 	HashBodyLength              = 50
 	StructuralSeparator         = "--"
-	StructuralSeparatorEscaped  = "-2d-2d"
+	StructuralSeparatorEscaped = "-2d-2d"
 )
 
 const base36Alphabet = "0123456789abcdefghijklmnopqrstuvwxyz"
@@ -27,24 +25,13 @@ var (
 	ErrInvalidEscape   = errors.New("invalid escape sequence")
 	ErrInvalidUTF8     = errors.New("invalid utf-8 byte sequence")
 	ErrInvalidEncoding = errors.New("invalid profile label or marker")
-	ErrInvalidLocator  = errors.New("invalid profile locator")
 	ErrNotDecodable    = errors.New("profile hash label is not decodable")
 )
-
-var hexDigits = [256]byte{
-	'0': 0, '1': 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, '9': 9,
-	'a': 10, 'b': 11, 'c': 12, 'd': 13, 'e': 14, 'f': 15,
-	'A': 10, 'B': 11, 'C': 12, 'D': 13, 'E': 14, 'F': 15,
-}
 
 var hexChars = [16]byte{'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'}
 
 func isLiteralByte(b byte) bool {
 	return (b >= 0x61 && b <= 0x7a) || (b >= 0x30 && b <= 0x39)
-}
-
-func isHostStart(b byte) bool {
-	return isLiteralByte(b)
 }
 
 func canonicalizeBytes(input []byte) []byte {
@@ -73,23 +60,41 @@ func encodeBytes(bytes []byte) string {
 	return out.String()
 }
 
-func EncodeBody(input string) string {
+func EncodeComponent(input string) string {
 	return encodeBytes(canonicalizeBytes([]byte(input)))
 }
 
+func EncodeBody(input string) string {
+	components := strings.Split(input, StructuralSeparator)
+	for i := range components {
+		components[i] = EncodeComponent(components[i])
+	}
+	return strings.Join(components, StructuralSeparator)
+}
+
 func parseHexByte(h1, h2 byte) (byte, bool) {
-	hi, ok1 := hexDigits[h1]
-	lo, ok2 := hexDigits[h2]
-	if !ok1 || !ok2 || hi > 15 || lo > 15 {
+	nibble := func(b byte) (byte, bool) {
+		switch {
+		case b >= '0' && b <= '9':
+			return b - '0', true
+		case b >= 'a' && b <= 'f':
+			return b - 'a' + 10, true
+		default:
+			return 0, false
+		}
+	}
+	hi, ok1 := nibble(h1)
+	lo, ok2 := nibble(h2)
+	if !ok1 || !ok2 {
 		return 0, false
 	}
 	return hi*16 + lo, true
 }
 
-func DecodeBody(body string) (string, error) {
-	out := make([]byte, 0, len(body))
-	for i := 0; i < len(body); {
-		b := body[i]
+func DecodeComponent(component string) (string, error) {
+	out := make([]byte, 0, len(component))
+	for i := 0; i < len(component); {
+		b := component[i]
 		if isLiteralByte(b) {
 			out = append(out, b)
 			i++
@@ -98,10 +103,10 @@ func DecodeBody(body string) (string, error) {
 		if b != '-' {
 			return "", ErrInvalidEscape
 		}
-		if i+3 > len(body) {
+		if i+3 > len(component) {
 			return "", ErrInvalidEscape
 		}
-		value, ok := parseHexByte(body[i+1], body[i+2])
+		value, ok := parseHexByte(component[i+1], component[i+2])
 		if !ok {
 			return "", ErrInvalidEscape
 		}
@@ -114,41 +119,16 @@ func DecodeBody(body string) (string, error) {
 	return string(out), nil
 }
 
-func markerHostPrefix(marker string) (string, error) {
-	if !strings.HasSuffix(marker, StructuralSeparator) {
-		return "", ErrInvalidEncoding
+func DecodeBody(body string) (string, error) {
+	components := strings.Split(body, StructuralSeparator)
+	for i := range components {
+		decoded, err := DecodeComponent(components[i])
+		if err != nil {
+			return "", err
+		}
+		components[i] = decoded
 	}
-	return marker[:len(marker)-len(StructuralSeparator)], nil
-}
-
-func validateHost(host, marker string) error {
-	markerHost, err := markerHostPrefix(marker)
-	if err != nil {
-		return err
-	}
-	if host == ReservedHostXn || host == markerHost {
-		return ErrInvalidLocator
-	}
-	return nil
-}
-
-func splitLocator(locator, marker string) (string, string, error) {
-	sep := strings.Index(locator, StructuralSeparator)
-	if sep <= 0 || sep+2 >= len(locator) {
-		return "", "", ErrInvalidLocator
-	}
-	host := locator[:sep]
-	entity := locator[sep+2:]
-	if entity == "" {
-		return "", "", ErrInvalidLocator
-	}
-	if len(host) == 0 || !isHostStart(host[0]) {
-		return "", "", ErrInvalidLocator
-	}
-	if err := validateHost(host, marker); err != nil {
-		return "", "", err
-	}
-	return host, entity, nil
+	return strings.Join(components, StructuralSeparator), nil
 }
 
 func base36(data []byte) string {
@@ -158,7 +138,6 @@ func base36(data []byte) string {
 	}
 
 	base := big.NewInt(36)
-	zero := big.NewInt(0)
 	rem := new(big.Int)
 	var digits [HashBodyLength]byte
 
@@ -173,6 +152,12 @@ func validateMarker(marker string) error {
 	if len(marker) < 3 || len(marker) > 13 || !strings.HasSuffix(marker, StructuralSeparator) || strings.HasPrefix(marker, "xn--") {
 		return ErrInvalidEncoding
 	}
+	for i := 0; i < len(marker); i++ {
+		b := marker[i]
+		if !((b >= 'a' && b <= 'z') || (b >= '0' && b <= '9') || b == '-') {
+			return ErrInvalidEncoding
+		}
+	}
 	return nil
 }
 
@@ -180,26 +165,21 @@ func isBase36Byte(b byte) bool {
 	return (b >= '0' && b <= '9') || (b >= 'a' && b <= 'z')
 }
 
-func EncodeProfile(locator, marker string) (string, error) {
+func EncodeProfile(input, marker string) (string, error) {
 	if err := validateMarker(marker); err != nil {
 		return "", err
 	}
 
-	canonical := string(canonicalizeBytes([]byte(locator)))
-	host, entity, err := splitLocator(canonical, marker)
-	if err != nil {
-		return "", err
+	label := EncodeBody(input)
+	if label == "" || strings.HasPrefix(label, "-") || strings.HasSuffix(label, "-") {
+		return "", ErrInvalidEncoding
 	}
 
-	hostBody := encodeBytes([]byte(host))
-	entityBody := encodeBytes([]byte(entity))
-	label := hostBody + StructuralSeparator + entityBody
-
-	if len(label) <= MaxLabelLength {
+	if len(label) <= MaxLabelLength && !strings.HasPrefix(label, marker) {
 		return label, nil
 	}
 
-	hashInput := hostBody + StructuralSeparatorEscaped + entityBody
+	hashInput := EncodeComponent(input)
 	sum := sha256.Sum256([]byte(hashInput))
 	encoded := marker + base36(sum[:])
 	if len(encoded) > MaxLabelLength {
@@ -212,10 +192,6 @@ func DecodeProfile(label, marker string) (string, error) {
 	if err := validateMarker(marker); err != nil {
 		return "", err
 	}
-	if len(label) > MaxLabelLength {
-		return "", ErrLabelTooLong
-	}
-
 	if strings.HasPrefix(label, marker) {
 		digest := label[len(marker):]
 		if len(digest) != HashBodyLength {
@@ -229,34 +205,18 @@ func DecodeProfile(label, marker string) (string, error) {
 		return "", ErrNotDecodable
 	}
 
-	if strings.HasPrefix(label, "xn--") {
+	if len(label) > MaxLabelLength {
+		return "", ErrLabelTooLong
+	}
+	if label == "" || strings.HasPrefix(label, "-") || strings.HasSuffix(label, "-") {
 		return "", ErrInvalidEncoding
 	}
 
-	sep := strings.Index(label, StructuralSeparator)
-	if sep <= 0 || sep+2 > len(label) {
-		return "", ErrInvalidEncoding
-	}
-
-	host, err := DecodeBody(label[:sep])
-	if err != nil {
-		return "", err
-	}
-	entity, err := DecodeBody(label[sep+2:])
-	if err != nil {
-		return "", err
-	}
-	if host == "" || entity == "" || strings.Contains(host, StructuralSeparator) {
-		return "", ErrInvalidLocator
-	}
-	if err := validateHost(host, marker); err != nil {
-		return "", err
-	}
-	return host + StructuralSeparator + entity, nil
+	return DecodeBody(label)
 }
 
-func Encode(locator string) (string, error) {
-	return EncodeProfile(locator, IdrtoHashMarker)
+func Encode(input string) (string, error) {
+	return EncodeProfile(input, IdrtoHashMarker)
 }
 
 func Decode(label string) (string, error) {
@@ -264,6 +224,8 @@ func Decode(label string) (string, error) {
 }
 
 type VectorsFile struct {
+	EncodeComponent     []struct{ Input, Encoded string } `json:"encode_component"`
+	DecodeComponent     []struct{ Input, Decoded string } `json:"decode_component"`
 	EncodeBody          []struct{ Input, Encoded string } `json:"encode_body"`
 	DecodeBody          []struct{ Input, Decoded string } `json:"decode_body"`
 	DecodeBodyErrors    []struct{ Input, Reason string }  `json:"decode_body_errors"`

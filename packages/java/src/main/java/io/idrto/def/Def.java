@@ -12,8 +12,6 @@ import java.util.Arrays;
 public final class Def {
     public static final int MAX_LABEL_LENGTH = 63;
     public static final String IDRTO_HASH_MARKER = "idrto-h1--";
-    public static final String IDRTO_MARKER_HOST = "idrto-h1";
-    public static final String RESERVED_HOST_XN = "xn";
     public static final int HASH_BODY_LENGTH = 50;
     public static final String STRUCTURAL_SEPARATOR = "--";
     public static final String STRUCTURAL_SEPARATOR_ESCAPED = "-2d-2d";
@@ -29,7 +27,6 @@ public final class Def {
         }
         for (int i = 0; i < 6; i++) {
             HEX_DIGITS['a' + i] = (byte) (10 + i);
-            HEX_DIGITS['A' + i] = (byte) (10 + i);
         }
     }
 
@@ -38,7 +35,6 @@ public final class Def {
         INVALID_ESCAPE,
         INVALID_UTF8,
         INVALID_ENCODING,
-        INVALID_LOCATOR,
         NOT_DECODABLE
     }
 
@@ -59,10 +55,6 @@ public final class Def {
 
     private static boolean isLiteralByte(int value) {
         return (value >= 0x61 && value <= 0x7a) || (value >= 0x30 && value <= 0x39);
-    }
-
-    private static boolean isHostStart(int value) {
-        return isLiteralByte(value);
     }
 
     private static byte[] canonicalizeToBytes(String input) {
@@ -90,9 +82,23 @@ public final class Def {
         return out.toString();
     }
 
-    /** Encode input to a DEF body (§9). */
-    public static String encodeBody(String input) {
+    /** Encode one DEF component. */
+    public static String encodeComponent(String input) {
         return encodeBytes(canonicalizeToBytes(input));
+    }
+
+    /** Encode input to a DEF body, preserving structural separators. */
+    public static String encodeBody(String input) {
+        StringBuilder out = new StringBuilder(input.length() * 2);
+        int componentStart = 0;
+        int separator;
+        while ((separator = input.indexOf(STRUCTURAL_SEPARATOR, componentStart)) >= 0) {
+            out.append(encodeComponent(input.substring(componentStart, separator)));
+            out.append(STRUCTURAL_SEPARATOR);
+            componentStart = separator + STRUCTURAL_SEPARATOR.length();
+        }
+        out.append(encodeComponent(input.substring(componentStart)));
+        return out.toString();
     }
 
     private static int parseHexPair(int h1, int h2) {
@@ -107,13 +113,17 @@ public final class Def {
         return n1 * 16 + n2;
     }
 
-    /** Decode a DEF body (§10). */
-    public static String decodeBody(String body) throws DefException {
-        byte[] out = new byte[body.length()];
+    /** Decode one DEF component. */
+    public static String decodeComponent(String component) throws DefException {
+        if (component.contains(STRUCTURAL_SEPARATOR)) {
+            throw new DefException("raw structural separator in component", ErrorCode.INVALID_ESCAPE);
+        }
+
+        byte[] out = new byte[component.length()];
         int outLen = 0;
 
-        for (int i = 0; i < body.length(); ) {
-            char ch = body.charAt(i);
+        for (int i = 0; i < component.length(); ) {
+            char ch = component.charAt(i);
             if (isLiteralByte(ch)) {
                 out[outLen++] = (byte) ch;
                 i++;
@@ -123,11 +133,11 @@ public final class Def {
             if (ch != '-') {
                 throw new DefException("invalid character in encoded input", ErrorCode.INVALID_ESCAPE);
             }
-            if (i + 3 > body.length()) {
+            if (i + 3 > component.length()) {
                 throw new DefException("truncated escape sequence", ErrorCode.INVALID_ESCAPE);
             }
 
-            int value = parseHexPair(body.charAt(i + 1), body.charAt(i + 2));
+            int value = parseHexPair(component.charAt(i + 1), component.charAt(i + 2));
             if (value < 0) {
                 throw new DefException("invalid escape sequence", ErrorCode.INVALID_ESCAPE);
             }
@@ -146,38 +156,18 @@ public final class Def {
         }
     }
 
-    private static String markerHostPrefix(String marker) throws DefException {
-        if (!marker.endsWith(STRUCTURAL_SEPARATOR)) {
-            throw new DefException("invalid provider hash marker", ErrorCode.INVALID_ENCODING);
+    /** Decode a DEF body, preserving structural separators. */
+    public static String decodeBody(String body) throws DefException {
+        StringBuilder out = new StringBuilder(body.length());
+        int componentStart = 0;
+        int separator;
+        while ((separator = body.indexOf(STRUCTURAL_SEPARATOR, componentStart)) >= 0) {
+            out.append(decodeComponent(body.substring(componentStart, separator)));
+            out.append(STRUCTURAL_SEPARATOR);
+            componentStart = separator + STRUCTURAL_SEPARATOR.length();
         }
-        return marker.substring(0, marker.length() - STRUCTURAL_SEPARATOR.length());
-    }
-
-    private static void validateHost(String host, String marker) throws DefException {
-        if (RESERVED_HOST_XN.equals(host) || markerHostPrefix(marker).equals(host)) {
-            throw new DefException("invalid profile host", ErrorCode.INVALID_LOCATOR);
-        }
-    }
-
-    private static String[] splitLocator(String locator, String marker) throws DefException {
-        int sep = locator.indexOf(STRUCTURAL_SEPARATOR);
-        if (sep <= 0 || sep + 2 >= locator.length()) {
-            throw new DefException("invalid profile locator", ErrorCode.INVALID_LOCATOR);
-        }
-
-        String host = locator.substring(0, sep);
-        String entity = locator.substring(sep + 2);
-        if (host.contains(STRUCTURAL_SEPARATOR) || entity.isEmpty()) {
-            throw new DefException("invalid profile locator", ErrorCode.INVALID_LOCATOR);
-        }
-
-        byte[] hostBytes = host.getBytes(StandardCharsets.UTF_8);
-        if (hostBytes.length == 0 || !isHostStart(hostBytes[0] & 0xff)) {
-            throw new DefException("invalid profile host", ErrorCode.INVALID_LOCATOR);
-        }
-
-        validateHost(host, marker);
-        return new String[] { host, entity };
+        out.append(decodeComponent(body.substring(componentStart)));
+        return out.toString();
     }
 
     private static String base36(byte[] data) {
@@ -200,7 +190,11 @@ public final class Def {
         if (marker.length() < 3
                 || marker.length() > 13
                 || !marker.endsWith(STRUCTURAL_SEPARATOR)
-                || marker.startsWith("xn--")) {
+                || marker.startsWith("xn--")
+                || !marker.chars().allMatch(ch ->
+                        (ch >= 'a' && ch <= 'z')
+                                || (ch >= '0' && ch <= '9')
+                                || ch == '-')) {
             throw new DefException("invalid provider hash marker", ErrorCode.INVALID_ENCODING);
         }
     }
@@ -209,30 +203,27 @@ public final class Def {
         return (code >= 0x30 && code <= 0x39) || (code >= 0x61 && code <= 0x7a);
     }
 
-    /** Encode a profile locator with the configured hash marker (§12). */
-    public static String encodeProfile(String locator) throws DefException {
-        return encodeProfile(locator, IDRTO_HASH_MARKER);
+    /** Encode profile input with the configured hash marker. */
+    public static String encodeProfile(String input) throws DefException {
+        return encodeProfile(input, IDRTO_HASH_MARKER);
     }
 
-    /** Encode a profile locator with the configured hash marker (§12). */
-    public static String encodeProfile(String locator, String marker) throws DefException {
+    /** Encode profile input with the configured hash marker. */
+    public static String encodeProfile(String input, String marker) throws DefException {
         validateMarker(marker);
 
-        byte[] canonical = canonicalizeToBytes(locator);
+        byte[] canonical = canonicalizeToBytes(input);
         String canonicalText = new String(canonical, StandardCharsets.UTF_8);
-        String[] parts = splitLocator(canonicalText, marker);
-        String host = parts[0];
-        String entity = parts[1];
+        String label = encodeBody(canonicalText);
+        if (label.isEmpty() || label.startsWith("-") || label.endsWith("-")) {
+            throw new DefException("invalid profile encoding", ErrorCode.INVALID_ENCODING);
+        }
 
-        String hostBody = encodeBytes(host.getBytes(StandardCharsets.UTF_8));
-        String entityBody = encodeBytes(entity.getBytes(StandardCharsets.UTF_8));
-        String label = hostBody + STRUCTURAL_SEPARATOR + entityBody;
-
-        if (label.length() <= MAX_LABEL_LENGTH) {
+        if (label.length() <= MAX_LABEL_LENGTH && !label.startsWith(marker)) {
             return label;
         }
 
-        String hashInput = hostBody + STRUCTURAL_SEPARATOR_ESCAPED + entityBody;
+        String hashInput = encodeComponent(canonicalText);
         byte[] digest;
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-256");
@@ -248,18 +239,14 @@ public final class Def {
         return encoded;
     }
 
-    /** Decode a profile label with the configured hash marker (§12). */
+    /** Decode a profile label with the configured hash marker. */
     public static String decodeProfile(String label) throws DefException {
         return decodeProfile(label, IDRTO_HASH_MARKER);
     }
 
-    /** Decode a profile label with the configured hash marker (§12). */
+    /** Decode a profile label with the configured hash marker. */
     public static String decodeProfile(String label, String marker) throws DefException {
         validateMarker(marker);
-
-        if (label.length() > MAX_LABEL_LENGTH) {
-            throw new DefException("encoded label exceeds 63 characters", ErrorCode.LABEL_TOO_LONG);
-        }
 
         if (label.startsWith(marker)) {
             String digest = label.substring(marker.length());
@@ -274,33 +261,23 @@ public final class Def {
             throw new DefException("profile hash label is not decodable", ErrorCode.NOT_DECODABLE);
         }
 
-        if (label.startsWith("xn--")) {
-            throw new DefException("invalid profile label", ErrorCode.INVALID_ENCODING);
+        if (label.length() > MAX_LABEL_LENGTH) {
+            throw new DefException("encoded label exceeds 63 characters", ErrorCode.LABEL_TOO_LONG);
         }
 
-        int sep = label.indexOf(STRUCTURAL_SEPARATOR);
-        if (sep <= 0 || sep + 2 > label.length()) {
-            throw new DefException("missing profile separator", ErrorCode.INVALID_ENCODING);
+        if (label.isEmpty() || label.startsWith("-") || label.endsWith("-")) {
+            throw new DefException("invalid profile encoding", ErrorCode.INVALID_ENCODING);
         }
 
-        String host = decodeBody(label.substring(0, sep));
-        String entity = decodeBody(label.substring(sep + 2));
-
-        if (host.isEmpty() || entity.isEmpty() || host.contains(STRUCTURAL_SEPARATOR)) {
-            throw new DefException("invalid decoded profile locator", ErrorCode.INVALID_LOCATOR);
-        }
-
-        validateHost(host, marker);
-
-        return host + STRUCTURAL_SEPARATOR + entity;
+        return decodeBody(label);
     }
 
-    /** Encode an idr.to identity locator. */
-    public static String encode(String locator) throws DefException {
-        return encodeProfile(locator, IDRTO_HASH_MARKER);
+    /** Encode input with the default profile. */
+    public static String encode(String input) throws DefException {
+        return encodeProfile(input, IDRTO_HASH_MARKER);
     }
 
-    /** Decode an idr.to profile label. */
+    /** Decode input with the default profile. */
     public static String decode(String label) throws DefException {
         return decodeProfile(label, IDRTO_HASH_MARKER);
     }

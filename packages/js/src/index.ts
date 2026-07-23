@@ -1,7 +1,5 @@
 export const MAX_LABEL_LENGTH = 63;
 export const IDRTO_HASH_MARKER = "idrto-h1--";
-export const IDRTO_MARKER_HOST = "idrto-h1";
-export const RESERVED_HOST_XN = "xn";
 export const HASH_BODY_LENGTH = 50;
 export const STRUCTURAL_SEPARATOR = "--";
 export const STRUCTURAL_SEPARATOR_ESCAPED = "-2d-2d";
@@ -14,7 +12,6 @@ export type DefErrorCode =
   | "invalid_escape"
   | "invalid_utf8"
   | "invalid_encoding"
-  | "invalid_locator"
   | "not_decodable";
 
 export class DefError extends Error {
@@ -29,10 +26,6 @@ export class DefError extends Error {
 
 function isLiteralByte(byte: number): boolean {
   return (byte >= 0x61 && byte <= 0x7a) || (byte >= 0x30 && byte <= 0x39);
-}
-
-function isHostStart(byte: number): boolean {
-  return isLiteralByte(byte);
 }
 
 function encodeBytes(bytes: Uint8Array): string {
@@ -57,9 +50,17 @@ function canonicalizeToBytes(input: string): Uint8Array {
   return bytes;
 }
 
-/** Encode input to a DEF body (§9). */
-export function encodeBody(input: string): string {
+/** Encode one DEF payload component. */
+export function encodeComponent(input: string): string {
   return encodeBytes(canonicalizeToBytes(input));
+}
+
+/** Encode a DEF body, preserving structural separators. */
+export function encodeBody(input: string): string {
+  return input
+    .split(STRUCTURAL_SEPARATOR)
+    .map(encodeComponent)
+    .join(STRUCTURAL_SEPARATOR);
 }
 
 function parseHexPair(h1: number, h2: number): number | null {
@@ -81,13 +82,17 @@ function parseHexPair(h1: number, h2: number): number | null {
   return n1 * 16 + n2;
 }
 
-/** Decode a DEF body (§10). */
-export function decodeBody(body: string): string {
-  const bytes = new Uint8Array(body.length);
+/** Decode one DEF payload component. */
+export function decodeComponent(component: string): string {
+  if (component.includes(STRUCTURAL_SEPARATOR)) {
+    throw new DefError("structural separator in component", "invalid_escape");
+  }
+
+  const bytes = new Uint8Array(component.length);
   let len = 0;
 
-  for (let i = 0; i < body.length; ) {
-    const code = body.charCodeAt(i);
+  for (let i = 0; i < component.length; ) {
+    const code = component.charCodeAt(i);
 
     if ((code >= 0x61 && code <= 0x7a) || (code >= 0x30 && code <= 0x39)) {
       bytes[len++] = code;
@@ -99,13 +104,13 @@ export function decodeBody(body: string): string {
       throw new DefError("invalid character in encoded input", "invalid_escape");
     }
 
-    if (i + 3 > body.length) {
+    if (i + 3 > component.length) {
       throw new DefError("truncated escape sequence", "invalid_escape");
     }
 
     const value = parseHexPair(
-      body.charCodeAt(i + 1),
-      body.charCodeAt(i + 2),
+      component.charCodeAt(i + 1),
+      component.charCodeAt(i + 2),
     );
     if (value === null) {
       throw new DefError("invalid escape sequence", "invalid_escape");
@@ -124,41 +129,12 @@ export function decodeBody(body: string): string {
   }
 }
 
-function markerHostPrefix(marker: string): string {
-  if (!marker.endsWith(STRUCTURAL_SEPARATOR)) {
-    throw new DefError("invalid provider hash marker", "invalid_encoding");
-  }
-  return marker.slice(0, -STRUCTURAL_SEPARATOR.length);
-}
-
-function validateHost(host: string, marker: string): void {
-  if (host === RESERVED_HOST_XN || host === markerHostPrefix(marker)) {
-    throw new DefError("invalid profile host", "invalid_locator");
-  }
-}
-
-function splitLocator(
-  locator: string,
-  marker: string,
-): { host: string; entity: string } {
-  const sep = locator.indexOf(STRUCTURAL_SEPARATOR);
-  if (sep <= 0 || sep + 2 >= locator.length) {
-    throw new DefError("invalid profile locator", "invalid_locator");
-  }
-
-  const host = locator.slice(0, sep);
-  const entity = locator.slice(sep + 2);
-  if (host.includes(STRUCTURAL_SEPARATOR) || entity.length === 0) {
-    throw new DefError("invalid profile locator", "invalid_locator");
-  }
-
-  const hostBytes = new TextEncoder().encode(host);
-  if (hostBytes.length === 0 || !isHostStart(hostBytes[0]!)) {
-    throw new DefError("invalid profile host", "invalid_locator");
-  }
-
-  validateHost(host, marker);
-  return { host, entity };
+/** Decode a DEF body without reinterpreting decoded payload. */
+export function decodeBody(body: string): string {
+  return body
+    .split(STRUCTURAL_SEPARATOR)
+    .map(decodeComponent)
+    .join(STRUCTURAL_SEPARATOR);
 }
 
 function base36(data: Uint8Array): string {
@@ -202,33 +178,30 @@ function validateMarker(marker: string): void {
     marker.length < 3 ||
     marker.length > 13 ||
     !marker.endsWith(STRUCTURAL_SEPARATOR) ||
-    marker.startsWith("xn--")
+    marker.startsWith("xn--") ||
+    !/^[a-z0-9-]+$/.test(marker)
   ) {
     throw new DefError("invalid provider hash marker", "invalid_encoding");
   }
 }
 
-/** Encode a profile locator with the configured hash marker (§12). */
+/** Encode a value as a profile label with the configured hash marker. */
 export async function encodeProfile(
-  locator: string,
+  value: string,
   marker: string = IDRTO_HASH_MARKER,
 ): Promise<string> {
   validateMarker(marker);
 
-  const canonical = canonicalizeToBytes(locator);
-  const canonicalText = new TextDecoder().decode(canonical);
-  const { host, entity } = splitLocator(canonicalText, marker);
+  const label = encodeBody(value);
+  if (label.length === 0 || label.startsWith("-") || label.endsWith("-")) {
+    throw new DefError("invalid profile encoding", "invalid_encoding");
+  }
 
-  const hostBody = encodeBytes(new TextEncoder().encode(host));
-  const entityBody = encodeBytes(new TextEncoder().encode(entity));
-  const label = hostBody + STRUCTURAL_SEPARATOR + entityBody;
-
-  if (label.length <= MAX_LABEL_LENGTH) {
+  if (label.length <= MAX_LABEL_LENGTH && !label.startsWith(marker)) {
     return label;
   }
 
-  const hashInput =
-    hostBody + STRUCTURAL_SEPARATOR_ESCAPED + entityBody;
+  const hashInput = encodeComponent(value);
   const digest = await sha256(new TextEncoder().encode(hashInput));
   const encoded = marker + base36(digest);
   if (encoded.length > MAX_LABEL_LENGTH) {
@@ -247,13 +220,6 @@ export function decodeProfile(
 ): string {
   validateMarker(marker);
 
-  if (label.length > MAX_LABEL_LENGTH) {
-    throw new DefError(
-      "encoded label exceeds 63 characters",
-      "label_too_long",
-    );
-  }
-
   if (label.startsWith(marker)) {
     const digest = label.slice(marker.length);
     if (digest.length !== HASH_BODY_LENGTH) {
@@ -267,33 +233,26 @@ export function decodeProfile(
     throw new DefError("profile hash label is not decodable", "not_decodable");
   }
 
-  if (label.startsWith("xn--")) {
-    throw new DefError("invalid profile label", "invalid_encoding");
+  if (label.length === 0 || label.startsWith("-") || label.endsWith("-")) {
+    throw new DefError("invalid profile encoding", "invalid_encoding");
   }
 
-  const sep = label.indexOf(STRUCTURAL_SEPARATOR);
-  if (sep <= 0 || sep + 2 > label.length) {
-    throw new DefError("missing profile separator", "invalid_encoding");
+  if (label.length > MAX_LABEL_LENGTH) {
+    throw new DefError(
+      "encoded label exceeds 63 characters",
+      "label_too_long",
+    );
   }
 
-  const host = decodeBody(label.slice(0, sep));
-  const entity = decodeBody(label.slice(sep + 2));
-
-  if (host.length === 0 || entity.length === 0 || host.includes(STRUCTURAL_SEPARATOR)) {
-    throw new DefError("invalid decoded profile locator", "invalid_locator");
-  }
-
-  validateHost(host, marker);
-
-  return host + STRUCTURAL_SEPARATOR + entity;
+  return decodeBody(label);
 }
 
-/** Encode an idr.to identity locator. */
-export function encode(locator: string): Promise<string> {
-  return encodeProfile(locator, IDRTO_HASH_MARKER);
+/** Encode a value with the default profile. */
+export function encode(value: string): Promise<string> {
+  return encodeProfile(value, IDRTO_HASH_MARKER);
 }
 
-/** Decode an idr.to profile label. */
+/** Decode a label with the default profile. */
 export function decode(label: string): string {
   return decodeProfile(label, IDRTO_HASH_MARKER);
 }

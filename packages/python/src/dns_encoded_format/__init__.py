@@ -6,8 +6,6 @@ import hashlib
 
 MAX_LABEL_LENGTH = 63
 IDRTO_HASH_MARKER = "idrto-h1--"
-IDRTO_MARKER_HOST = "idrto-h1"
-RESERVED_HOST_XN = "xn"
 HASH_BODY_LENGTH = 50
 STRUCTURAL_SEPARATOR = "--"
 STRUCTURAL_SEPARATOR_ESCAPED = "-2d-2d"
@@ -24,10 +22,6 @@ class DefError(Exception):
 
 def _is_literal_byte(byte: int) -> bool:
     return (0x61 <= byte <= 0x7A) or (0x30 <= byte <= 0x39)
-
-
-def _is_host_start(byte: int) -> bool:
-    return _is_literal_byte(byte)
 
 
 def _canonicalize_bytes(data: bytes) -> bytes:
@@ -49,8 +43,14 @@ def _encode_bytes(data: bytes) -> str:
     return "".join(parts)
 
 
-def encode_body(text: str) -> str:
+def encode_component(text: str) -> str:
     return _encode_bytes(_canonicalize_bytes(text.encode("utf-8")))
+
+
+def encode_body(text: str) -> str:
+    return STRUCTURAL_SEPARATOR.join(
+        encode_component(component) for component in text.split(STRUCTURAL_SEPARATOR)
+    )
 
 
 def _parse_hex_byte(h1: int, h2: int) -> int | None:
@@ -68,12 +68,15 @@ def _parse_hex_byte(h1: int, h2: int) -> int | None:
     return hi * 16 + lo
 
 
-def decode_body(body: str) -> str:
+def decode_component(component: str) -> str:
+    if STRUCTURAL_SEPARATOR in component:
+        raise DefError("structural separator in component", "invalid_escape")
+
     out = bytearray()
     i = 0
-    length = len(body)
+    length = len(component)
     while i < length:
-        code = ord(body[i])
+        code = ord(component[i])
         if (0x61 <= code <= 0x7A) or (0x30 <= code <= 0x39):
             out.append(code)
             i += 1
@@ -85,7 +88,7 @@ def decode_body(body: str) -> str:
         if i + 3 > length:
             raise DefError("truncated escape sequence", "invalid_escape")
 
-        value = _parse_hex_byte(ord(body[i + 1]), ord(body[i + 2]))
+        value = _parse_hex_byte(ord(component[i + 1]), ord(component[i + 2]))
         if value is None:
             raise DefError("invalid escape sequence", "invalid_escape")
 
@@ -98,33 +101,10 @@ def decode_body(body: str) -> str:
         raise DefError("invalid utf-8 byte sequence", "invalid_utf8") from exc
 
 
-def _marker_host_prefix(marker: str) -> str:
-    if not marker.endswith(STRUCTURAL_SEPARATOR):
-        raise DefError("invalid provider hash marker", "invalid_encoding")
-    return marker[: -len(STRUCTURAL_SEPARATOR)]
-
-
-def _validate_host(host: str, marker: str) -> None:
-    if host == RESERVED_HOST_XN or host == _marker_host_prefix(marker):
-        raise DefError("invalid profile host", "invalid_locator")
-
-
-def _split_locator(locator: str, marker: str) -> tuple[str, str]:
-    sep = locator.find(STRUCTURAL_SEPARATOR)
-    if sep <= 0 or sep + 2 >= len(locator):
-        raise DefError("invalid profile locator", "invalid_locator")
-
-    host = locator[:sep]
-    entity = locator[sep + 2 :]
-    if not entity:
-        raise DefError("invalid profile locator", "invalid_locator")
-
-    host_bytes = host.encode("utf-8")
-    if not host_bytes or not _is_host_start(host_bytes[0]):
-        raise DefError("invalid profile host", "invalid_locator")
-
-    _validate_host(host, marker)
-    return host, entity
+def decode_body(body: str) -> str:
+    return STRUCTURAL_SEPARATOR.join(
+        decode_component(component) for component in body.split(STRUCTURAL_SEPARATOR)
+    )
 
 
 def _base36(data: bytes) -> str:
@@ -145,24 +125,25 @@ def _validate_marker(marker: str) -> None:
         or len(marker) > 13
         or not marker.endswith(STRUCTURAL_SEPARATOR)
         or marker.startswith("xn--")
+        or any(
+            not ("a" <= char <= "z" or "0" <= char <= "9" or char == "-")
+            for char in marker
+        )
     ):
         raise DefError("invalid provider hash marker", "invalid_encoding")
 
 
-def encode_profile(locator: str, marker: str = IDRTO_HASH_MARKER) -> str:
+def encode_profile(value: str, marker: str = IDRTO_HASH_MARKER) -> str:
     _validate_marker(marker)
 
-    canonical = _canonicalize_bytes(locator.encode("utf-8")).decode("utf-8")
-    host, entity = _split_locator(canonical, marker)
+    label = encode_body(value)
+    if not label or label.startswith("-") or label.endswith("-"):
+        raise DefError("invalid profile encoding", "invalid_encoding")
 
-    host_body = _encode_bytes(host.encode("utf-8"))
-    entity_body = _encode_bytes(entity.encode("utf-8"))
-    label = f"{host_body}{STRUCTURAL_SEPARATOR}{entity_body}"
-
-    if len(label) <= MAX_LABEL_LENGTH:
+    if len(label) <= MAX_LABEL_LENGTH and not label.startswith(marker):
         return label
 
-    hash_input = f"{host_body}{STRUCTURAL_SEPARATOR_ESCAPED}{entity_body}"
+    hash_input = encode_component(value)
     digest = hashlib.sha256(hash_input.encode("utf-8")).digest()
     encoded = marker + _base36(digest)
     if len(encoded) > MAX_LABEL_LENGTH:
@@ -173,9 +154,6 @@ def encode_profile(locator: str, marker: str = IDRTO_HASH_MARKER) -> str:
 def decode_profile(label: str, marker: str = IDRTO_HASH_MARKER) -> str:
     _validate_marker(marker)
 
-    if len(label) > MAX_LABEL_LENGTH:
-        raise DefError("encoded label exceeds 63 characters", "label_too_long")
-
     if label.startswith(marker):
         digest = label[len(marker) :]
         if len(digest) != HASH_BODY_LENGTH or not all(
@@ -184,26 +162,17 @@ def decode_profile(label: str, marker: str = IDRTO_HASH_MARKER) -> str:
             raise DefError("invalid profile hash label", "invalid_encoding")
         raise DefError("profile hash label is not decodable", "not_decodable")
 
-    if label.startswith("xn--"):
-        raise DefError("invalid profile label", "invalid_encoding")
+    if not label or label.startswith("-") or label.endswith("-"):
+        raise DefError("invalid profile encoding", "invalid_encoding")
 
-    sep = label.find(STRUCTURAL_SEPARATOR)
-    if sep <= 0 or sep + 2 > len(label):
-        raise DefError("missing profile separator", "invalid_encoding")
+    if len(label) > MAX_LABEL_LENGTH:
+        raise DefError("encoded label exceeds 63 characters", "label_too_long")
 
-    host = decode_body(label[:sep])
-    entity = decode_body(label[sep + 2 :])
-
-    if not host or not entity or STRUCTURAL_SEPARATOR in host:
-        raise DefError("invalid decoded profile locator", "invalid_locator")
-
-    _validate_host(host, marker)
-
-    return f"{host}{STRUCTURAL_SEPARATOR}{entity}"
+    return decode_body(label)
 
 
-def encode(locator: str) -> str:
-    return encode_profile(locator, IDRTO_HASH_MARKER)
+def encode(value: str) -> str:
+    return encode_profile(value, IDRTO_HASH_MARKER)
 
 
 def decode(label: str) -> str:

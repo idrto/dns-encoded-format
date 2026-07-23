@@ -5,9 +5,11 @@ import { describe, expect, it } from "vitest";
 import {
   decode,
   decodeBody,
+  decodeComponent,
   decodeProfile,
   encode,
   encodeBody,
+  encodeComponent,
   encodeProfile,
   IDRTO_HASH_MARKER,
 } from "./index.js";
@@ -21,6 +23,8 @@ const vectorsPath = join(
   "test-vectors.json",
 );
 const vectors = JSON.parse(readFileSync(vectorsPath, "utf8")) as {
+  encode_component: Array<{ input: string; encoded: string }>;
+  decode_component: Array<{ input: string; decoded: string }>;
   encode_body: Array<{ input: string; encoded: string }>;
   decode_body: Array<{ input: string; decoded: string }>;
   decode_body_errors: Array<{ input: string; reason: string }>;
@@ -30,6 +34,26 @@ const vectors = JSON.parse(readFileSync(vectorsPath, "utf8")) as {
   decode_profile: Array<{ input: string; decoded: string }>;
   decode_profile_errors: Array<{ input: string; reason: string }>;
 };
+
+describe("components", () => {
+  for (const { input, encoded } of vectors.encode_component) {
+    it(`encodes ${JSON.stringify(input)}`, () => {
+      expect(encodeComponent(input)).toBe(encoded);
+    });
+  }
+
+  for (const { input, decoded } of vectors.decode_component) {
+    it(`decodes ${JSON.stringify(input)}`, () => {
+      expect(decodeComponent(input)).toBe(decoded);
+    });
+  }
+
+  it("rejects a raw structural separator", () => {
+    expect(() => decodeComponent("a--b")).toThrowError(
+      expect.objectContaining({ code: "invalid_escape" }),
+    );
+  });
+});
 
 describe("encodeBody", () => {
   for (const { input, encoded } of vectors.encode_body) {
@@ -119,4 +143,48 @@ describe("round trip", () => {
       );
     });
   }
+});
+
+describe("deterministic core properties", () => {
+  const alphabet = ["a", "B", "0", "-", "@", ".", "é", "用", "😊"];
+  const values = ["", "--", "a---b", "a-----b"];
+  let state = 0x5eed1234;
+  for (let caseIndex = 0; caseIndex < 200; caseIndex++) {
+    let value = "";
+    const length = caseIndex % 24;
+    for (let i = 0; i < length; i++) {
+      state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+      value += alphabet[state % alphabet.length]!;
+    }
+    values.push(value);
+  }
+
+  for (const value of values) {
+    it(`preserves structure for ${JSON.stringify(value)}`, () => {
+      const components = value.split("--");
+      const encoded = encodeBody(value);
+      const canonical = value.replace(/[A-Z]/g, (ch) => ch.toLowerCase());
+
+      expect(decodeBody(encoded)).toBe(canonical);
+      expect(encoded.split("--")).toHaveLength(components.length);
+      for (const component of components) {
+        expect(encodeComponent(component)).not.toContain("--");
+      }
+    });
+  }
+});
+
+describe("generic profile behavior", () => {
+  it("allows xn-- as ordinary DEF structure", async () => {
+    await expect(encodeProfile("xn--value")).resolves.toBe("xn--value");
+    expect(decodeProfile("xn--value")).toBe("xn--value");
+  });
+
+  it("hashes a reversible marker-prefixed output", async () => {
+    const encoded = await encodeProfile("x--value", "x--");
+    expect(encoded).toMatch(/^x--[0-9a-z]{50}$/);
+    expect(() => decodeProfile(encoded, "x--")).toThrowError(
+      expect.objectContaining({ code: "not_decodable" }),
+    );
+  });
 });

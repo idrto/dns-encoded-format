@@ -31,8 +31,6 @@ private:
             return "output buffer too small";
         case DEF_ERR_INVALID_ENCODING:
             return "invalid profile label or marker";
-        case DEF_ERR_INVALID_LOCATOR:
-            return "invalid profile locator";
         case DEF_ERR_NOT_DECODABLE:
             return "profile hash label is not decodable";
         default:
@@ -40,6 +38,26 @@ private:
         }
     }
 };
+
+inline std::string encode_component(const std::string &input) {
+    char buffer[4096];
+    size_t length = 0;
+    def_status status = def_encode_component(input.c_str(), buffer, sizeof(buffer), &length);
+    if (status != DEF_OK) {
+        throw DefError(status);
+    }
+    return std::string(buffer, length);
+}
+
+inline std::string decode_component(const std::string &component) {
+    char buffer[4096];
+    size_t length = 0;
+    def_status status = def_decode_component(component.c_str(), buffer, sizeof(buffer), &length);
+    if (status != DEF_OK) {
+        throw DefError(status);
+    }
+    return std::string(buffer, length);
+}
 
 inline std::string encode_body(const std::string &input) {
     char buffer[4096];
@@ -62,12 +80,12 @@ inline std::string decode_body(const std::string &body) {
 }
 
 inline std::string encode_profile(
-    const std::string &locator,
+    const std::string &input,
     const char *marker = DEF_IDRTO_HASH_MARKER) {
     char buffer[128];
     size_t length = 0;
     def_status status =
-        def_encode_profile(locator.c_str(), marker, buffer, sizeof(buffer), &length);
+        def_encode_profile(input.c_str(), marker, buffer, sizeof(buffer), &length);
     if (status != DEF_OK) {
         throw DefError(status);
     }
@@ -87,10 +105,10 @@ inline std::string decode_profile(
     return std::string(buffer, length);
 }
 
-inline std::string encode(const std::string &locator) {
+inline std::string encode(const std::string &input) {
     char buffer[128];
     size_t length = 0;
-    def_status status = def_encode(locator.c_str(), buffer, sizeof(buffer), &length);
+    def_status status = def_encode(input.c_str(), buffer, sizeof(buffer), &length);
     if (status != DEF_OK) {
         throw DefError(status);
     }

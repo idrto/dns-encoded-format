@@ -8,8 +8,6 @@ public static class Def
 {
     public const int MaxLabelLength = 63;
     public const string IdrtoHashMarker = "idrto-h1--";
-    public const string IdrtoMarkerHost = "idrto-h1";
-    public const string ReservedHostXn = "xn";
     public const int HashBodyLength = 50;
     public const string StructuralSeparator = "--";
     public const string StructuralSeparatorEscaped = "-2d-2d";
@@ -24,7 +22,6 @@ public static class Def
         InvalidEscape,
         InvalidUtf8,
         InvalidEncoding,
-        InvalidLocator,
         NotDecodable
     }
 
@@ -40,8 +37,6 @@ public static class Def
 
     private static bool IsLiteralByte(byte value) =>
         (value >= 0x61 && value <= 0x7a) || (value >= 0x30 && value <= 0x39);
-
-    private static bool IsHostStart(byte value) => IsLiteralByte(value);
 
     private static bool IsBase36Char(char c) =>
         (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z');
@@ -80,9 +75,29 @@ public static class Def
         return builder.ToString();
     }
 
-    /// <summary>Encode input to a DEF body (§9).</summary>
-    public static string EncodeBody(string input) =>
+    /// <summary>Encode one DEF component.</summary>
+    public static string EncodeComponent(string input) =>
         EncodeBytes(CanonicalizeToBytes(input));
+
+    /// <summary>Encode input to a DEF body, preserving structural separators.</summary>
+    public static string EncodeBody(string input)
+    {
+        var builder = new StringBuilder(input.Length * 2);
+        var componentStart = 0;
+        while (true)
+        {
+            var separator = input.IndexOf(StructuralSeparator, componentStart, StringComparison.Ordinal);
+            if (separator < 0)
+            {
+                builder.Append(EncodeComponent(input[componentStart..]));
+                return builder.ToString();
+            }
+
+            builder.Append(EncodeComponent(input[componentStart..separator]));
+            builder.Append(StructuralSeparator);
+            componentStart = separator + StructuralSeparator.Length;
+        }
+    }
 
     private static int? ParseHexByte(char h1, char h2)
     {
@@ -98,15 +113,20 @@ public static class Def
         return hi is null || lo is null ? null : hi.Value * 16 + lo.Value;
     }
 
-    /// <summary>Decode a DEF body (§10).</summary>
-    public static string DecodeBody(string body)
+    /// <summary>Decode one DEF component.</summary>
+    public static string DecodeComponent(string component)
     {
-        var bytes = new byte[body.Length];
+        if (component.Contains(StructuralSeparator, StringComparison.Ordinal))
+        {
+            throw new DefException("raw structural separator in component", ErrorCode.InvalidEscape);
+        }
+
+        var bytes = new byte[component.Length];
         var len = 0;
 
-        for (var i = 0; i < body.Length;)
+        for (var i = 0; i < component.Length;)
         {
-            var code = body[i];
+            var code = component[i];
             if (IsLiteralByte((byte)code))
             {
                 bytes[len++] = (byte)code;
@@ -119,12 +139,12 @@ public static class Def
                 throw new DefException("invalid character in encoded input", ErrorCode.InvalidEscape);
             }
 
-            if (i + 3 > body.Length)
+            if (i + 3 > component.Length)
             {
                 throw new DefException("truncated escape sequence", ErrorCode.InvalidEscape);
             }
 
-            var value = ParseHexByte(body[i + 1], body[i + 2]);
+            var value = ParseHexByte(component[i + 1], component[i + 2]);
             if (value is null)
             {
                 throw new DefException("invalid escape sequence", ErrorCode.InvalidEscape);
@@ -144,47 +164,24 @@ public static class Def
         }
     }
 
-    private static string MarkerHostPrefix(string marker)
+    /// <summary>Decode a DEF body, preserving structural separators.</summary>
+    public static string DecodeBody(string body)
     {
-        if (!marker.EndsWith(StructuralSeparator, StringComparison.Ordinal))
+        var builder = new StringBuilder(body.Length);
+        var componentStart = 0;
+        while (true)
         {
-            throw new DefException("invalid provider hash marker", ErrorCode.InvalidEncoding);
+            var separator = body.IndexOf(StructuralSeparator, componentStart, StringComparison.Ordinal);
+            if (separator < 0)
+            {
+                builder.Append(DecodeComponent(body[componentStart..]));
+                return builder.ToString();
+            }
+
+            builder.Append(DecodeComponent(body[componentStart..separator]));
+            builder.Append(StructuralSeparator);
+            componentStart = separator + StructuralSeparator.Length;
         }
-
-        return marker[..^StructuralSeparator.Length];
-    }
-
-    private static void ValidateHost(string host, string marker)
-    {
-        if (host == ReservedHostXn || host == MarkerHostPrefix(marker))
-        {
-            throw new DefException("invalid profile host", ErrorCode.InvalidLocator);
-        }
-    }
-
-    private static (string Host, string Entity) SplitLocator(string locator, string marker)
-    {
-        var sep = locator.IndexOf(StructuralSeparator, StringComparison.Ordinal);
-        if (sep <= 0 || sep + 2 >= locator.Length)
-        {
-            throw new DefException("invalid profile locator", ErrorCode.InvalidLocator);
-        }
-
-        var host = locator[..sep];
-        var entity = locator[(sep + 2)..];
-        if (host.Contains(StructuralSeparator, StringComparison.Ordinal) || entity.Length == 0)
-        {
-            throw new DefException("invalid profile locator", ErrorCode.InvalidLocator);
-        }
-
-        var hostBytes = Encoding.UTF8.GetBytes(host);
-        if (hostBytes.Length == 0 || !IsHostStart(hostBytes[0]))
-        {
-            throw new DefException("invalid profile host", ErrorCode.InvalidLocator);
-        }
-
-        ValidateHost(host, marker);
-        return (host, entity);
     }
 
     private static string Base36(ReadOnlySpan<byte> data)
@@ -214,32 +211,40 @@ public static class Def
     {
         if (marker.Length < 3
             || marker.Length > 13
-            || !marker.EndsWith(StructuralSeparator, StringComparison.Ordinal)
-            || marker.StartsWith("xn--", StringComparison.Ordinal))
+            || !marker.EndsWith(StructuralSeparator, StringComparison.Ordinal))
+        {
+            throw new DefException("invalid provider hash marker", ErrorCode.InvalidEncoding);
+        }
+
+        if (marker.StartsWith("xn--", StringComparison.Ordinal)
+            || marker.Any(c => !(c is >= 'a' and <= 'z'
+                || c is >= '0' and <= '9'
+                || c == '-')))
         {
             throw new DefException("invalid provider hash marker", ErrorCode.InvalidEncoding);
         }
     }
 
-    /// <summary>Encode a profile locator with the configured hash marker (§12).</summary>
-    public static string EncodeProfile(string locator, string marker = IdrtoHashMarker)
+    /// <summary>Encode profile input with the configured hash marker.</summary>
+    public static string EncodeProfile(string input, string marker = IdrtoHashMarker)
     {
         ValidateMarker(marker);
 
-        var canonical = CanonicalizeToBytes(locator);
+        var canonical = CanonicalizeToBytes(input);
         var canonicalText = Utf8Strict.GetString(canonical);
-        var (host, entity) = SplitLocator(canonicalText, marker);
+        var label = EncodeBody(canonicalText);
+        if (label.Length == 0 || label.StartsWith('-') || label.EndsWith('-'))
+        {
+            throw new DefException("invalid profile encoding", ErrorCode.InvalidEncoding);
+        }
 
-        var hostBody = EncodeBytes(Encoding.UTF8.GetBytes(host));
-        var entityBody = EncodeBytes(Encoding.UTF8.GetBytes(entity));
-        var label = hostBody + StructuralSeparator + entityBody;
-
-        if (label.Length <= MaxLabelLength)
+        if (label.Length <= MaxLabelLength
+            && !label.StartsWith(marker, StringComparison.Ordinal))
         {
             return label;
         }
 
-        var hashInput = hostBody + StructuralSeparatorEscaped + entityBody;
+        var hashInput = EncodeComponent(canonicalText);
         var digest = SHA256.HashData(Encoding.UTF8.GetBytes(hashInput));
         var encoded = marker + Base36(digest);
         if (encoded.Length > MaxLabelLength)
@@ -250,15 +255,10 @@ public static class Def
         return encoded;
     }
 
-    /// <summary>Decode a profile label with the configured hash marker (§12).</summary>
+    /// <summary>Decode a profile label with the configured hash marker.</summary>
     public static string DecodeProfile(string label, string marker = IdrtoHashMarker)
     {
         ValidateMarker(marker);
-
-        if (label.Length > MaxLabelLength)
-        {
-            throw new DefException("encoded label exceeds 63 characters", ErrorCode.LabelTooLong);
-        }
 
         if (label.StartsWith(marker, StringComparison.Ordinal))
         {
@@ -279,35 +279,22 @@ public static class Def
             throw new DefException("profile hash label is not decodable", ErrorCode.NotDecodable);
         }
 
-        if (label.StartsWith("xn--", StringComparison.Ordinal))
+        if (label.Length > MaxLabelLength)
         {
-            throw new DefException("invalid profile label", ErrorCode.InvalidEncoding);
+            throw new DefException("encoded label exceeds 63 characters", ErrorCode.LabelTooLong);
         }
 
-        var sep = label.IndexOf(StructuralSeparator, StringComparison.Ordinal);
-        if (sep <= 0 || sep + 2 > label.Length)
+        if (label.Length == 0 || label.StartsWith('-') || label.EndsWith('-'))
         {
-            throw new DefException("missing profile separator", ErrorCode.InvalidEncoding);
+            throw new DefException("invalid profile encoding", ErrorCode.InvalidEncoding);
         }
 
-        var host = DecodeBody(label[..sep]);
-        var entity = DecodeBody(label[(sep + 2)..]);
-
-        if (host.Length == 0
-            || entity.Length == 0
-            || host.Contains(StructuralSeparator, StringComparison.Ordinal))
-        {
-            throw new DefException("invalid decoded profile locator", ErrorCode.InvalidLocator);
-        }
-
-        ValidateHost(host, marker);
-
-        return host + StructuralSeparator + entity;
+        return DecodeBody(label);
     }
 
-    /// <summary>Encode an idr.to identity locator.</summary>
-    public static string Encode(string locator) => EncodeProfile(locator, IdrtoHashMarker);
+    /// <summary>Encode input with the default profile.</summary>
+    public static string Encode(string input) => EncodeProfile(input, IdrtoHashMarker);
 
-    /// <summary>Decode an idr.to profile label.</summary>
+    /// <summary>Decode input with the default profile.</summary>
     public static string Decode(string label) => DecodeProfile(label, IdrtoHashMarker);
 }

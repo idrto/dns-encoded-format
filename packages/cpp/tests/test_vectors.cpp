@@ -34,7 +34,6 @@ def_status reason_to_status(const std::string &reason) {
     if (reason == "invalid_escape") return DEF_ERR_INVALID_ESCAPE;
     if (reason == "invalid_utf8") return DEF_ERR_INVALID_UTF8;
     if (reason == "invalid_encoding") return DEF_ERR_INVALID_ENCODING;
-    if (reason == "invalid_locator") return DEF_ERR_INVALID_LOCATOR;
     if (reason == "not_decodable") return DEF_ERR_NOT_DECODABLE;
     return DEF_ERR_INVALID_ENCODING;
 }
@@ -59,7 +58,12 @@ bool run_section(const std::string &json, const std::string &section) {
         if (section.rfind("encode", 0) == 0 && section.find("_errors") == std::string::npos) {
             const auto input = extract_string(obj, "input");
             const auto encoded = extract_string(obj, "encoded");
-            if (section == "encode_body") {
+            if (section == "encode_component") {
+                if (idrto::encode_component(input) != encoded) {
+                    std::cerr << section << " failed for " << input << "\n";
+                    return false;
+                }
+            } else if (section == "encode_body") {
                 if (idrto::encode_body(input) != encoded) {
                     std::cerr << section << " failed for " << input << "\n";
                     return false;
@@ -73,7 +77,12 @@ bool run_section(const std::string &json, const std::string &section) {
         } else if (section.rfind("decode", 0) == 0 && section.find("_errors") == std::string::npos) {
             const auto input = extract_string(obj, "input");
             const auto decoded = extract_string(obj, "decoded");
-            if (section == "decode_body") {
+            if (section == "decode_component") {
+                if (idrto::decode_component(input) != decoded) {
+                    std::cerr << section << " failed for " << input << "\n";
+                    return false;
+                }
+            } else if (section == "decode_body") {
                 if (idrto::decode_body(input) != decoded) {
                     std::cerr << section << " failed for " << input << "\n";
                     return false;
@@ -111,11 +120,52 @@ bool run_section(const std::string &json, const std::string &section) {
     return true;
 }
 
+bool run_representative_round_trips() {
+    const std::string components[] = {"", "abc", "a-b", "--", "user@example.com", u8"é", u8"用户"};
+    const std::string bodies[] = {"abc", "a---b", "a----b", "a-----b", "a@--b", u8"é--用户"};
+
+    for (const auto &component : components) {
+        if (idrto::decode_component(idrto::encode_component(component)) != component) {
+            std::cerr << "component round trip failed for " << component << "\n";
+            return false;
+        }
+    }
+    for (const auto &body : bodies) {
+        if (idrto::decode_body(idrto::encode_body(body)) != body) {
+            std::cerr << "body round trip failed for " << body << "\n";
+            return false;
+        }
+    }
+
+    try {
+        idrto::decode_component("--");
+        std::cerr << "decode_component accepted a raw structural separator\n";
+        return false;
+    } catch (const idrto::DefError &err) {
+        if (err.status() != DEF_ERR_INVALID_ESCAPE) {
+            return false;
+        }
+    }
+    if (idrto::decode_profile("xn--abc") != "xn--abc") {
+        std::cerr << "decode_profile rejected xn--\n";
+        return false;
+    }
+    const auto collision = idrto::encode_profile("abc--value", "abc--");
+    if (collision.rfind("abc--", 0) != 0 ||
+        collision.size() != std::string("abc--").size() + DEF_HASH_BODY_LENGTH) {
+        std::cerr << "encode_profile did not hash a marker-prefix collision\n";
+        return false;
+    }
+    return true;
+}
+
 }  // namespace
 
 int main() {
     const auto json = read_file(TEST_VECTORS_PATH);
     const char *sections[] = {
+        "encode_component",
+        "decode_component",
         "encode_body",
         "decode_body",
         "decode_body_errors",
@@ -130,6 +180,10 @@ int main() {
         if (!run_section(json, section)) {
             return 1;
         }
+    }
+
+    if (!run_representative_round_trips()) {
+        return 1;
     }
 
     return 0;

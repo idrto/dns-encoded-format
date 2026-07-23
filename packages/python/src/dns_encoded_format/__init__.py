@@ -6,6 +6,8 @@ import hashlib
 
 MAX_LABEL_LENGTH = 63
 IDRTO_HASH_MARKER = "idrto-h1--"
+IDRTO_MARKER_HOST = "idrto-h1"
+RESERVED_HOST_XN = "xn"
 HASH_BODY_LENGTH = 50
 STRUCTURAL_SEPARATOR = "--"
 STRUCTURAL_SEPARATOR_ESCAPED = "-2d-2d"
@@ -96,7 +98,18 @@ def decode_body(body: str) -> str:
         raise DefError("invalid utf-8 byte sequence", "invalid_utf8") from exc
 
 
-def _split_locator(locator: str) -> tuple[str, str]:
+def _marker_host_prefix(marker: str) -> str:
+    if not marker.endswith(STRUCTURAL_SEPARATOR):
+        raise DefError("invalid provider hash marker", "invalid_encoding")
+    return marker[: -len(STRUCTURAL_SEPARATOR)]
+
+
+def _validate_host(host: str, marker: str) -> None:
+    if host == RESERVED_HOST_XN or host == _marker_host_prefix(marker):
+        raise DefError("invalid profile host", "invalid_locator")
+
+
+def _split_locator(locator: str, marker: str) -> tuple[str, str]:
     sep = locator.find(STRUCTURAL_SEPARATOR)
     if sep <= 0 or sep + 2 >= len(locator):
         raise DefError("invalid profile locator", "invalid_locator")
@@ -110,6 +123,7 @@ def _split_locator(locator: str) -> tuple[str, str]:
     if not host_bytes or not _is_host_start(host_bytes[0]):
         raise DefError("invalid profile host", "invalid_locator")
 
+    _validate_host(host, marker)
     return host, entity
 
 
@@ -139,13 +153,13 @@ def encode_profile(locator: str, marker: str = IDRTO_HASH_MARKER) -> str:
     _validate_marker(marker)
 
     canonical = _canonicalize_bytes(locator.encode("utf-8")).decode("utf-8")
-    host, entity = _split_locator(canonical)
+    host, entity = _split_locator(canonical, marker)
 
     host_body = _encode_bytes(host.encode("utf-8"))
     entity_body = _encode_bytes(entity.encode("utf-8"))
     label = f"{host_body}{STRUCTURAL_SEPARATOR}{entity_body}"
 
-    if len(label) <= MAX_LABEL_LENGTH and not label.startswith("xn--"):
+    if len(label) <= MAX_LABEL_LENGTH:
         return label
 
     hash_input = f"{host_body}{STRUCTURAL_SEPARATOR_ESCAPED}{entity_body}"
@@ -182,6 +196,8 @@ def decode_profile(label: str, marker: str = IDRTO_HASH_MARKER) -> str:
 
     if not host or not entity or STRUCTURAL_SEPARATOR in host:
         raise DefError("invalid decoded profile locator", "invalid_locator")
+
+    _validate_host(host, marker)
 
     return f"{host}{STRUCTURAL_SEPARATOR}{entity}"
 

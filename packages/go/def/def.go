@@ -13,6 +13,8 @@ import (
 const (
 	MaxLabelLength              = 63
 	IdrtoHashMarker             = "idrto-h1--"
+	IdrtoMarkerHost             = "idrto-h1"
+	ReservedHostXn              = "xn"
 	HashBodyLength              = 50
 	StructuralSeparator         = "--"
 	StructuralSeparatorEscaped  = "-2d-2d"
@@ -112,7 +114,25 @@ func DecodeBody(body string) (string, error) {
 	return string(out), nil
 }
 
-func splitLocator(locator string) (string, string, error) {
+func markerHostPrefix(marker string) (string, error) {
+	if !strings.HasSuffix(marker, StructuralSeparator) {
+		return "", ErrInvalidEncoding
+	}
+	return marker[:len(marker)-len(StructuralSeparator)], nil
+}
+
+func validateHost(host, marker string) error {
+	markerHost, err := markerHostPrefix(marker)
+	if err != nil {
+		return err
+	}
+	if host == ReservedHostXn || host == markerHost {
+		return ErrInvalidLocator
+	}
+	return nil
+}
+
+func splitLocator(locator, marker string) (string, string, error) {
 	sep := strings.Index(locator, StructuralSeparator)
 	if sep <= 0 || sep+2 >= len(locator) {
 		return "", "", ErrInvalidLocator
@@ -124,6 +144,9 @@ func splitLocator(locator string) (string, string, error) {
 	}
 	if len(host) == 0 || !isHostStart(host[0]) {
 		return "", "", ErrInvalidLocator
+	}
+	if err := validateHost(host, marker); err != nil {
+		return "", "", err
 	}
 	return host, entity, nil
 }
@@ -163,7 +186,7 @@ func EncodeProfile(locator, marker string) (string, error) {
 	}
 
 	canonical := string(canonicalizeBytes([]byte(locator)))
-	host, entity, err := splitLocator(canonical)
+	host, entity, err := splitLocator(canonical, marker)
 	if err != nil {
 		return "", err
 	}
@@ -172,7 +195,7 @@ func EncodeProfile(locator, marker string) (string, error) {
 	entityBody := encodeBytes([]byte(entity))
 	label := hostBody + StructuralSeparator + entityBody
 
-	if len(label) <= MaxLabelLength && !strings.HasPrefix(label, "xn--") {
+	if len(label) <= MaxLabelLength {
 		return label, nil
 	}
 
@@ -225,6 +248,9 @@ func DecodeProfile(label, marker string) (string, error) {
 	}
 	if host == "" || entity == "" || strings.Contains(host, StructuralSeparator) {
 		return "", ErrInvalidLocator
+	}
+	if err := validateHost(host, marker); err != nil {
+		return "", err
 	}
 	return host + StructuralSeparator + entity, nil
 }

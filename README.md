@@ -14,6 +14,8 @@ The specification lives in [docs/rfc.md](docs/rfc.md). Conformance vectors are i
 | **Service Provider Profile** | Structured locator `<host>--<entity>` with hash fallback (`encodeProfile` / `decodeProfile`) |
 | **idr.to shortcuts** | Profile with marker `idrto-h1--` (`encode` / `decode`) |
 
+Global host constraints (§5.1): host MUST NOT be `xn` (reserved for IDNA A-label prefix) or `idrto-h1` (the marker host prefix for `idrto-h1--`).
+
 Reversible profile labels preserve the first literal `--` separator. Labels longer than 63 characters, or labels beginning with `xn--`, use profile hash encoding:
 
 ```text

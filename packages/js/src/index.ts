@@ -1,5 +1,7 @@
 export const MAX_LABEL_LENGTH = 63;
 export const IDRTO_HASH_MARKER = "idrto-h1--";
+export const IDRTO_MARKER_HOST = "idrto-h1";
+export const RESERVED_HOST_XN = "xn";
 export const HASH_BODY_LENGTH = 50;
 export const STRUCTURAL_SEPARATOR = "--";
 export const STRUCTURAL_SEPARATOR_ESCAPED = "-2d-2d";
@@ -122,7 +124,23 @@ export function decodeBody(body: string): string {
   }
 }
 
-function splitLocator(locator: string): { host: string; entity: string } {
+function markerHostPrefix(marker: string): string {
+  if (!marker.endsWith(STRUCTURAL_SEPARATOR)) {
+    throw new DefError("invalid provider hash marker", "invalid_encoding");
+  }
+  return marker.slice(0, -STRUCTURAL_SEPARATOR.length);
+}
+
+function validateHost(host: string, marker: string): void {
+  if (host === RESERVED_HOST_XN || host === markerHostPrefix(marker)) {
+    throw new DefError("invalid profile host", "invalid_locator");
+  }
+}
+
+function splitLocator(
+  locator: string,
+  marker: string,
+): { host: string; entity: string } {
   const sep = locator.indexOf(STRUCTURAL_SEPARATOR);
   if (sep <= 0 || sep + 2 >= locator.length) {
     throw new DefError("invalid profile locator", "invalid_locator");
@@ -139,6 +157,7 @@ function splitLocator(locator: string): { host: string; entity: string } {
     throw new DefError("invalid profile host", "invalid_locator");
   }
 
+  validateHost(host, marker);
   return { host, entity };
 }
 
@@ -198,13 +217,13 @@ export async function encodeProfile(
 
   const canonical = canonicalizeToBytes(locator);
   const canonicalText = new TextDecoder().decode(canonical);
-  const { host, entity } = splitLocator(canonicalText);
+  const { host, entity } = splitLocator(canonicalText, marker);
 
   const hostBody = encodeBytes(new TextEncoder().encode(host));
   const entityBody = encodeBytes(new TextEncoder().encode(entity));
   const label = hostBody + STRUCTURAL_SEPARATOR + entityBody;
 
-  if (label.length <= MAX_LABEL_LENGTH && !label.startsWith("xn--")) {
+  if (label.length <= MAX_LABEL_LENGTH) {
     return label;
   }
 
@@ -263,6 +282,8 @@ export function decodeProfile(
   if (host.length === 0 || entity.length === 0 || host.includes(STRUCTURAL_SEPARATOR)) {
     throw new DefError("invalid decoded profile locator", "invalid_locator");
   }
+
+  validateHost(host, marker);
 
   return host + STRUCTURAL_SEPARATOR + entity;
 }

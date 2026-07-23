@@ -9,7 +9,10 @@ extern "C" {
 
 #define DEF_MAX_LABEL_LENGTH 63
 #define DEF_IDRTO_HASH_MARKER "idrto-h1--"
+#define DEF_IDRTO_MARKER_HOST "idrto-h1"
+#define DEF_RESERVED_HOST_XN "xn"
 #define DEF_HASH_BODY_LENGTH 50
+#define DEF_STRUCTURAL_SEPARATOR "--"
 #define DEF_STRUCTURAL_SEPARATOR "--"
 
 typedef enum {

@@ -39,10 +39,6 @@
   ],
   "encode_profile_hash": [
     {
-      "input": "xn--test",
-      "encoded": "idrto-h1--0jt7u4sion8mqqw7n87enptq5d14yz7gi3xvy63f1dga5xvt3i"
-    },
-    {
       "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa--bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       "encoded": "idrto-h1--3mug7fre5lope7l4qxk6cb7wrekhkhk0ey25dr5d9z3bg7tbqa"
     }
@@ -51,7 +47,9 @@
     { "input": "hostonly", "reason": "invalid_locator" },
     { "input": "--entity", "reason": "invalid_locator" },
     { "input": "host--", "reason": "invalid_locator" },
-    { "input": "-bad--entity", "reason": "invalid_locator" }
+    { "input": "-bad--entity", "reason": "invalid_locator" },
+    { "input": "xn--test", "reason": "invalid_locator" },
+    { "input": "idrto-h1--entity", "reason": "invalid_locator" }
   ],
   "decode_profile": [
     { "input": "s--acme", "decoded": "s--acme" },

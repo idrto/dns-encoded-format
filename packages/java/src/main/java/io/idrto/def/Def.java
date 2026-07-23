@@ -12,6 +12,8 @@ import java.util.Arrays;
 public final class Def {
     public static final int MAX_LABEL_LENGTH = 63;
     public static final String IDRTO_HASH_MARKER = "idrto-h1--";
+    public static final String IDRTO_MARKER_HOST = "idrto-h1";
+    public static final String RESERVED_HOST_XN = "xn";
     public static final int HASH_BODY_LENGTH = 50;
     public static final String STRUCTURAL_SEPARATOR = "--";
     public static final String STRUCTURAL_SEPARATOR_ESCAPED = "-2d-2d";
@@ -144,7 +146,20 @@ public final class Def {
         }
     }
 
-    private static String[] splitLocator(String locator) throws DefException {
+    private static String markerHostPrefix(String marker) throws DefException {
+        if (!marker.endsWith(STRUCTURAL_SEPARATOR)) {
+            throw new DefException("invalid provider hash marker", ErrorCode.INVALID_ENCODING);
+        }
+        return marker.substring(0, marker.length() - STRUCTURAL_SEPARATOR.length());
+    }
+
+    private static void validateHost(String host, String marker) throws DefException {
+        if (RESERVED_HOST_XN.equals(host) || markerHostPrefix(marker).equals(host)) {
+            throw new DefException("invalid profile host", ErrorCode.INVALID_LOCATOR);
+        }
+    }
+
+    private static String[] splitLocator(String locator, String marker) throws DefException {
         int sep = locator.indexOf(STRUCTURAL_SEPARATOR);
         if (sep <= 0 || sep + 2 >= locator.length()) {
             throw new DefException("invalid profile locator", ErrorCode.INVALID_LOCATOR);
@@ -161,6 +176,7 @@ public final class Def {
             throw new DefException("invalid profile host", ErrorCode.INVALID_LOCATOR);
         }
 
+        validateHost(host, marker);
         return new String[] { host, entity };
     }
 
@@ -204,7 +220,7 @@ public final class Def {
 
         byte[] canonical = canonicalizeToBytes(locator);
         String canonicalText = new String(canonical, StandardCharsets.UTF_8);
-        String[] parts = splitLocator(canonicalText);
+        String[] parts = splitLocator(canonicalText, marker);
         String host = parts[0];
         String entity = parts[1];
 
@@ -212,7 +228,7 @@ public final class Def {
         String entityBody = encodeBytes(entity.getBytes(StandardCharsets.UTF_8));
         String label = hostBody + STRUCTURAL_SEPARATOR + entityBody;
 
-        if (label.length() <= MAX_LABEL_LENGTH && !label.startsWith("xn--")) {
+        if (label.length() <= MAX_LABEL_LENGTH) {
             return label;
         }
 
@@ -273,6 +289,8 @@ public final class Def {
         if (host.isEmpty() || entity.isEmpty() || host.contains(STRUCTURAL_SEPARATOR)) {
             throw new DefException("invalid decoded profile locator", ErrorCode.INVALID_LOCATOR);
         }
+
+        validateHost(host, marker);
 
         return host + STRUCTURAL_SEPARATOR + entity;
     }

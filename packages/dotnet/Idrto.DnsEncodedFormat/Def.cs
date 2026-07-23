@@ -8,6 +8,8 @@ public static class Def
 {
     public const int MaxLabelLength = 63;
     public const string IdrtoHashMarker = "idrto-h1--";
+    public const string IdrtoMarkerHost = "idrto-h1";
+    public const string ReservedHostXn = "xn";
     public const int HashBodyLength = 50;
     public const string StructuralSeparator = "--";
     public const string StructuralSeparatorEscaped = "-2d-2d";
@@ -142,7 +144,25 @@ public static class Def
         }
     }
 
-    private static (string Host, string Entity) SplitLocator(string locator)
+    private static string MarkerHostPrefix(string marker)
+    {
+        if (!marker.EndsWith(StructuralSeparator, StringComparison.Ordinal))
+        {
+            throw new DefException("invalid provider hash marker", ErrorCode.InvalidEncoding);
+        }
+
+        return marker[..^StructuralSeparator.Length];
+    }
+
+    private static void ValidateHost(string host, string marker)
+    {
+        if (host == ReservedHostXn || host == MarkerHostPrefix(marker))
+        {
+            throw new DefException("invalid profile host", ErrorCode.InvalidLocator);
+        }
+    }
+
+    private static (string Host, string Entity) SplitLocator(string locator, string marker)
     {
         var sep = locator.IndexOf(StructuralSeparator, StringComparison.Ordinal);
         if (sep <= 0 || sep + 2 >= locator.Length)
@@ -163,6 +183,7 @@ public static class Def
             throw new DefException("invalid profile host", ErrorCode.InvalidLocator);
         }
 
+        ValidateHost(host, marker);
         return (host, entity);
     }
 
@@ -207,13 +228,13 @@ public static class Def
 
         var canonical = CanonicalizeToBytes(locator);
         var canonicalText = Utf8Strict.GetString(canonical);
-        var (host, entity) = SplitLocator(canonicalText);
+        var (host, entity) = SplitLocator(canonicalText, marker);
 
         var hostBody = EncodeBytes(Encoding.UTF8.GetBytes(host));
         var entityBody = EncodeBytes(Encoding.UTF8.GetBytes(entity));
         var label = hostBody + StructuralSeparator + entityBody;
 
-        if (label.Length <= MaxLabelLength && !label.StartsWith("xn--", StringComparison.Ordinal))
+        if (label.Length <= MaxLabelLength)
         {
             return label;
         }
@@ -278,6 +299,8 @@ public static class Def
         {
             throw new DefException("invalid decoded profile locator", ErrorCode.InvalidLocator);
         }
+
+        ValidateHost(host, marker);
 
         return host + StructuralSeparator + entity;
     }

@@ -2,6 +2,8 @@ use sha2::{Digest, Sha256};
 
 pub const MAX_LABEL_LENGTH: usize = 63;
 pub const IDRTO_HASH_MARKER: &str = "idrto-h1--";
+pub const IDRTO_MARKER_HOST: &str = "idrto-h1";
+pub const RESERVED_HOST_XN: &str = "xn";
 pub const HASH_BODY_LENGTH: usize = 50;
 pub const STRUCTURAL_SEPARATOR: &str = "--";
 pub const STRUCTURAL_SEPARATOR_ESCAPED: &str = "-2d-2d";
@@ -109,7 +111,21 @@ pub fn decode_body(body: &str) -> Result<String, DefError> {
     String::from_utf8(out).map_err(|_| DefError::InvalidUtf8)
 }
 
-fn split_locator(locator: &str) -> Result<(&str, &str), DefError> {
+fn marker_host_prefix(marker: &str) -> Result<&str, DefError> {
+    marker
+        .strip_suffix(STRUCTURAL_SEPARATOR)
+        .ok_or(DefError::InvalidEncoding)
+}
+
+fn validate_host(host: &str, marker: &str) -> Result<(), DefError> {
+    let marker_host = marker_host_prefix(marker)?;
+    if host == RESERVED_HOST_XN || host == marker_host {
+        return Err(DefError::InvalidLocator);
+    }
+    Ok(())
+}
+
+fn split_locator<'a>(locator: &'a str, marker: &str) -> Result<(&'a str, &'a str), DefError> {
     let sep = locator
         .find(STRUCTURAL_SEPARATOR)
         .ok_or(DefError::InvalidLocator)?;
@@ -128,6 +144,7 @@ fn split_locator(locator: &str) -> Result<(&str, &str), DefError> {
         return Err(DefError::InvalidLocator);
     }
 
+    validate_host(host, marker)?;
     Ok((host, entity))
 }
 
@@ -170,13 +187,13 @@ pub fn encode_profile(locator: &str, marker: &str) -> Result<String, DefError> {
     canonicalize_in_place(&mut canonical);
     let canonical_text =
         std::str::from_utf8(&canonical).map_err(|_| DefError::InvalidUtf8)?;
-    let (host, entity) = split_locator(canonical_text)?;
+    let (host, entity) = split_locator(canonical_text, marker)?;
 
     let host_body = encode_bytes(host.as_bytes());
     let entity_body = encode_bytes(entity.as_bytes());
     let label = format!("{host_body}{STRUCTURAL_SEPARATOR}{entity_body}");
 
-    if label.len() <= MAX_LABEL_LENGTH && !label.starts_with("xn--") {
+    if label.len() <= MAX_LABEL_LENGTH {
         return Ok(label);
     }
 
@@ -222,6 +239,8 @@ pub fn decode_profile(label: &str, marker: &str) -> Result<String, DefError> {
     if host.is_empty() || entity.is_empty() || host.contains(STRUCTURAL_SEPARATOR) {
         return Err(DefError::InvalidLocator);
     }
+
+    validate_host(&host, marker)?;
 
     Ok(format!("{host}{STRUCTURAL_SEPARATOR}{entity}"))
 }

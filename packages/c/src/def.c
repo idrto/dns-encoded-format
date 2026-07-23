@@ -447,8 +447,32 @@ static def_status validate_marker(const char *marker) {
     return DEF_OK;
 }
 
+static def_status validate_host(
+    const char *host,
+    size_t host_len,
+    const char *marker
+) {
+    size_t marker_len = strlen(marker);
+    size_t marker_host_len;
+
+    if (marker_len < 3 || marker[marker_len - 2] != '-' || marker[marker_len - 1] != '-') {
+        return DEF_ERR_INVALID_ENCODING;
+    }
+
+    marker_host_len = marker_len - 2;
+    if (host_len == 2 && memcmp(host, DEF_RESERVED_HOST_XN, 2) == 0) {
+        return DEF_ERR_INVALID_LOCATOR;
+    }
+    if (host_len == marker_host_len && memcmp(host, marker, marker_host_len) == 0) {
+        return DEF_ERR_INVALID_LOCATOR;
+    }
+
+    return DEF_OK;
+}
+
 static def_status split_locator(
     const char *locator,
+    const char *marker,
     const char **host,
     size_t *host_len,
     const char **entity,
@@ -478,7 +502,7 @@ static def_status split_locator(
         return DEF_ERR_INVALID_LOCATOR;
     }
 
-    return DEF_OK;
+    return validate_host(*host, *host_len, marker);
 }
 
 static def_status encode_profile_hash(
@@ -597,7 +621,7 @@ def_status def_encode_profile(
         return status;
     }
 
-    status = split_locator(canonical, &host, &host_len, &entity, &entity_len);
+    status = split_locator(canonical, marker, &host, &host_len, &entity, &entity_len);
     if (status != DEF_OK) {
         return status;
     }
@@ -629,7 +653,7 @@ def_status def_encode_profile(
     memcpy(output + host_body_len + 2, entity_body, entity_body_len);
     output[label_len] = '\0';
 
-    if (label_len <= DEF_MAX_LABEL_LENGTH && !starts_with(output, "xn--")) {
+    if (label_len <= DEF_MAX_LABEL_LENGTH) {
         *output_length = label_len;
         return DEF_OK;
     }
@@ -708,6 +732,11 @@ def_status def_decode_profile(
 
     if (host_len == 0 || entity_len == 0 || host_contains_separator(host)) {
         return DEF_ERR_INVALID_LOCATOR;
+    }
+
+    status = validate_host(host, host_len, marker);
+    if (status != DEF_OK) {
+        return status;
     }
 
     out_len = host_len + 2 + entity_len;

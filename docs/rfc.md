@@ -66,6 +66,15 @@ After canonicalization, the string SHALL be encoded as UTF-8.
 
 Encoding operates independently on each UTF-8 byte.
 
+### 5.1 Host Component Constraints
+
+Some DEF uses treat one component as a **host** joined to an entity with the literal sequence `--`. A host value MUST satisfy these global constraints:
+
+* It MUST NOT be `xn`. A host of `xn` would produce a profile label beginning with `xn--`, which is reserved for IDNA A-labels.
+* It MUST NOT equal the configured `provider_hash_marker` with its terminal `--` removed. Each service provider defines its own hash marker (for example `idrto-h1--`); the corresponding host value `idrto-h1` is reserved so reversible locators cannot be confused with profile hash labels.
+
+These constraints apply to canonical host values before DEF byte escaping. Encoders MUST reject locators whose host violates either rule. Decoders MUST reject recovered locators whose decoded host violates either rule.
+
 ## 6. Literal Characters
 
 The following ASCII characters SHALL be emitted unchanged:
@@ -203,9 +212,9 @@ Base DEF (§§4–10) is context-free: it encodes one opaque Unicode string and 
 * be at least 3 and at most 13 characters long;
 * NOT begin with `xn--`;
 * be unique within the provider's DNS namespace; and
-* be reserved: a reversible profile host component MUST NOT equal the marker without its terminal `--`.
+* reserve its host prefix: a profile host MUST NOT equal the marker with its terminal `--` removed (for `idrto-h1--`, the reserved host is `idrto-h1`).
 
-The 13-character maximum leaves room for the fixed 50-character Base36 SHA-256 digest within the 63-octet DNS label limit. A provider SHOULD include a format or algorithm version in the marker. This document uses `idrto-h1--` as the idr.to marker.
+The 13-character maximum leaves room for the fixed 50-character Base36 SHA-256 digest within the 63-octet DNS label limit. A provider SHOULD include a format or algorithm version in the marker. This document uses `idrto-h1--` as the idr.to marker; its reserved host prefix is `idrto-h1`.
 
 ### 12.2 Profile Input and Reversible Encoding
 
@@ -215,15 +224,15 @@ The profile input is a locator that is canonicalized before encoding:
 <host>--<entity>
 ```
 
-`host` and `entity` MUST both be non-empty. After canonicalization, `host` MUST begin with ASCII `a-z` or `0-9` so the resulting DNS label does not begin with a hyphen. `host` MUST NOT contain `--`. `entity` MAY contain `--`. The first occurrence of `--` is the sole structural separator.
+`host` and `entity` MUST both be non-empty. After canonicalization, `host` MUST begin with ASCII `a-z` or `0-9` so the resulting DNS label does not begin with a hyphen. `host` MUST NOT contain `--`. `host` MUST satisfy the global host constraints in §5.1 (`xn` and the configured marker host prefix are forbidden). `entity` MAY contain `--`. The first occurrence of `--` is the sole structural separator.
 
 To encode a locator reversibly:
 
 1. Canonicalize the entire locator according to §4.
-2. Split the canonical locator at its first `--` into `host` and `entity`. Reject the input if either component is empty.
-3. Apply DEF byte escaping (§§5–7) independently to `host` and `entity`, producing `host-body` and `entity-body`.
+2. Split the canonical locator at its first `--` into `host` and `entity`. Reject the input if either component is empty or if `host` violates §5.1.
+3. Apply DEF byte escaping (§§6–7) independently to `host` and `entity`, producing `host-body` and `entity-body`.
 4. Emit `host-body + "--" + entity-body`.
-5. If this label is more than 63 characters or begins with `xn--`, use profile hash encoding (§12.3). Otherwise return it.
+5. If this label is 63 characters or fewer, return it. Otherwise use profile hash encoding (§12.3).
 
 The profile preserves only the first structural `--`. Every hyphen inside either component is escaped by base DEF. Therefore a later `--` in `entity` is emitted as `-2d-2d`.
 
@@ -273,7 +282,7 @@ Given a configured `provider_hash_marker` and an input label:
 3. Otherwise, reject the label if it begins with `xn--`.
 4. Find the first literal `--`. Reject the label if none exists.
 5. Treat the text before that separator as `host-body` and all text after it as `entity-body`. Decode each body independently according to §10.
-6. Reject the label if either body is empty, invalid, or decodes to a host containing `--`.
+6. Reject the label if either body is empty, invalid, or decodes to a host that violates §5.1 or contains `--`.
 7. Reconstruct the canonical locator as `host + "--" + entity`.
 
 The first literal `--` is unambiguous: a base DEF escape is always `-` followed by two hexadecimal digits and cannot contain `--`.
@@ -290,13 +299,13 @@ PROFILE_HASH = PROVIDER_HASH_MARKER 50BASE36
 PROVIDER_HASH_MARKER = LITERAL *10( LITERAL / "-" ) "--"
 ```
 
-`PROFILE_LABEL` is additionally constrained by §12.2: it MUST NOT begin with `xn--`, its decoded host MUST NOT contain `--`, and a host equal to the configured marker without its final `--` is reserved.
+`PROFILE_LABEL` is additionally constrained by §12.2 and §5.1: its decoded host MUST NOT be `xn`, MUST NOT equal the configured marker host prefix, and MUST NOT contain `--`.
 
 ### 12.6 Security and Interoperability
 
 Providers MUST configure the same `provider_hash_marker` at all encoders, gateways, and registries for a DNS namespace. Parsers MUST test the marker before attempting reversible profile parsing, and MUST NOT fall back to a reversible interpretation after a malformed marker-prefixed label.
 
-Providers MUST reserve their marker to prevent a direct locator from being confused with a profile hash label. A profile label MUST NOT begin with `xn--`, which is reserved for IDNA A-labels rather than normal idr.to labels. Provider hash labels are identifiers, not authenticated assertions: applications requiring integrity or authorization MUST enforce those properties separately. As with base DEF, implementations MUST enforce the DNS length limit and reject malformed escapes and invalid UTF-8.
+Providers MUST reserve their marker host prefix to prevent a direct locator from being confused with a profile hash label. Host `xn` is globally forbidden (§5.1) so valid profile labels never begin with `xn--`. Profile hash labels are identifiers, not authenticated assertions: applications requiring integrity or authorization MUST enforce those properties separately. As with base DEF, implementations MUST enforce the DNS length limit and reject malformed escapes and invalid UTF-8.
 
 ## 13. URI Use Case: FQDNs for HTTPS and SNI
 

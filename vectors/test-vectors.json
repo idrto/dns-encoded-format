@@ -1,68 +1,76 @@
 {
-  "version": "1.2",
+  "version": "1.3",
   "max_label_length": 63,
-  "max_def_body_length": 62,
-  "encode": [
-    { "input": "alice", "encoded": "dalice" },
-    { "input": "Alice", "encoded": "dalice" },
-    { "input": "USER@example.COM", "encoded": "duser-40example-2ecom" },
-    { "input": "Laptop.US-East", "encoded": "dlaptop-2eus-2deast" },
-    { "input": "alice-1", "encoded": "dalice-2d1" },
-    { "input": "ssh", "encoded": "dssh" },
-    { "input": "postgres", "encoded": "dpostgres" },
+  "idrto_hash_marker": "idrto-h1--",
+  "encode_body": [
+    { "input": "alice", "encoded": "alice" },
+    { "input": "Alice", "encoded": "alice" },
+    { "input": "USER@example.COM", "encoded": "user-40example-2ecom" },
+    { "input": "Laptop.US-East", "encoded": "laptop-2eus-2deast" },
+    { "input": "alice-1", "encoded": "alice-2d1" },
+    { "input": "ssh", "encoded": "ssh" },
+    { "input": "postgres", "encoded": "postgres" },
+    { "input": "用户", "encoded": "-e7-94-a8-e6-88-b7" },
+    { "input": "😊", "encoded": "-f0-9f-98-8a" },
+    { "input": "", "encoded": "" }
+  ],
+  "decode_body": [
+    { "input": "alice", "decoded": "alice" },
+    { "input": "user-40example-2ecom", "decoded": "user@example.com" },
+    { "input": "-e7-94-a8-e6-88-b7", "decoded": "用户" },
+    { "input": "", "decoded": "" }
+  ],
+  "decode_body_errors": [
+    { "input": "abc-", "reason": "invalid_escape" },
+    { "input": "-gg", "reason": "invalid_escape" },
+    { "input": "-c0-80", "reason": "invalid_utf8" }
+  ],
+  "encode_profile": [
+    { "input": "s--acme", "encoded": "s--acme" },
+    { "input": "S--Acme", "encoded": "s--acme" },
     {
-      "input": "laptop.us-east~user@example.com",
-      "encoded": "dlaptop-2eus-2deast-7euser-40example-2ecom"
+      "input": "laptop.us-east--user@example.com",
+      "encoded": "laptop-2eus-2deast--user-40example-2ecom"
     },
-    { "input": "用户", "encoded": "d-e7-94-a8-e6-88-b7" },
-    { "input": "😊", "encoded": "d-f0-9f-98-8a" },
-    { "input": "", "encoded": "d" },
     {
-      "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "encoded": "daaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      "input": "api-v2--acme--production",
+      "encoded": "api-2dv2--acme-2d-2dproduction"
     }
   ],
-  "encode_hash": [
+  "encode_profile_hash": [
     {
-      "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "encoded": "h34dk0ez8tm7vyf659gc3tm7tfyv1n4fz6iqhx4wv7dte31ztx0"
+      "input": "xn--test",
+      "encoded": "idrto-h1--0jt7u4sion8mqqw7n87enptq5d14yz7gi3xvy63f1dga5xvt3i"
     },
     {
-      "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "encoded": "h6dl5vt15rq84vholfyw8vfmqsogsg52nitlm62npyv8po233zf"
-    },
-    {
-      "input": "😊😊😊😊😊😊😊😊😊😊😊😊😊😊😊😊",
-      "encoded": "h6a5aelpmn14767b6y03tbo5tqkun7xcvazojsebqj825zwztsv"
+      "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa--bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "encoded": "idrto-h1--3mug7fre5lope7l4qxk6cb7wrekhkhk0ey25dr5d9z3bg7tbqa"
     }
   ],
-  "encode_errors": [],
-  "decode": [
-    { "input": "dalice", "decoded": "alice" },
-    { "input": "duser-40example-2ecom", "decoded": "user@example.com" },
+  "encode_profile_errors": [
+    { "input": "hostonly", "reason": "invalid_locator" },
+    { "input": "--entity", "reason": "invalid_locator" },
+    { "input": "host--", "reason": "invalid_locator" },
+    { "input": "-bad--entity", "reason": "invalid_locator" }
+  ],
+  "decode_profile": [
+    { "input": "s--acme", "decoded": "s--acme" },
     {
-      "input": "dlaptop-2eus-2deast-7euser-40example-2ecom",
-      "decoded": "laptop.us-east~user@example.com"
+      "input": "laptop-2eus-2deast--user-40example-2ecom",
+      "decoded": "laptop.us-east--user@example.com"
     },
-    { "input": "d-e7-94-a8-e6-88-b7", "decoded": "用户" },
-    { "input": "d", "decoded": "" },
     {
-      "input": "daaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "decoded": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      "input": "api-2dv2--acme-2d-2dproduction",
+      "decoded": "api-v2--acme--production"
     }
   ],
-  "decode_errors": [
-    { "input": "alice", "reason": "invalid_encoding" },
-    { "input": "dabc-", "reason": "invalid_escape" },
-    { "input": "d-gg", "reason": "invalid_escape" },
-    { "input": "d-c0-80", "reason": "invalid_utf8" },
+  "decode_profile_errors": [
+    { "input": "hostonly", "reason": "invalid_encoding" },
     {
-      "input": "daaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "reason": "label_too_long"
-    },
-    {
-      "input": "h34dk0ez8tm7vyf659gc3tm7tfyv1n4fz6iqhx4wv7dte31ztx0",
+      "input": "idrto-h1--3mug7fre5lope7l4qxk6cb7wrekhkhk0ey25dr5d9z3bg7tbqa",
       "reason": "not_decodable"
-    }
+    },
+    { "input": "xn--acme--user", "reason": "invalid_encoding" },
+    { "input": "a-2d-2db--c", "reason": "invalid_locator" }
   ]
 }

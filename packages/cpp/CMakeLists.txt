@@ -9,4 +9,5 @@ enable_testing()
 
 add_executable(test_vectors_cpp tests/test_vectors.cpp)
 target_link_libraries(test_vectors_cpp PRIVATE def_cpp)
+target_compile_definitions(test_vectors_cpp PRIVATE TEST_VECTORS_PATH="${CMAKE_CURRENT_SOURCE_DIR}/../../vectors/test-vectors.json")
 add_test(NAME test_vectors_cpp COMMAND test_vectors_cpp)

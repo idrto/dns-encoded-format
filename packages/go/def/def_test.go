@@ -1,33 +1,85 @@
 package def_test
 
 import (
-	"encoding/json"
 	"errors"
-	"os"
 	"testing"
 
 	"github.com/idrto/dns-encoded-format/go/def"
 )
 
-type vectorsFile struct {
-	Encode       []struct{ Input, Encoded string }
-	EncodeHash   []struct{ Input, Encoded string } `json:"encode_hash"`
-	EncodeErrors []struct{ Input, Reason string }
-	Decode       []struct{ Input, Decoded string }
-	DecodeErrors []struct{ Input, Reason string }
-}
-
-func loadVectors(t *testing.T) vectorsFile {
-	t.Helper()
-	data, err := os.ReadFile("../../../vectors/test-vectors.json")
+func TestVectors(t *testing.T) {
+	v, err := def.LoadVectorsForTest()
 	if err != nil {
 		t.Fatal(err)
 	}
-	var v vectorsFile
-	if err := json.Unmarshal(data, &v); err != nil {
-		t.Fatal(err)
+
+	for _, c := range v.EncodeBody {
+		got := def.EncodeBody(c.Input)
+		if got != c.Encoded {
+			t.Fatalf("EncodeBody(%q) = %q, want %q", c.Input, got, c.Encoded)
+		}
 	}
-	return v
+
+	for _, c := range v.DecodeBody {
+		got, err := def.DecodeBody(c.Input)
+		if err != nil {
+			t.Fatalf("DecodeBody(%q): %v", c.Input, err)
+		}
+		if got != c.Decoded {
+			t.Fatalf("DecodeBody(%q) = %q, want %q", c.Input, got, c.Decoded)
+		}
+	}
+
+	for _, c := range v.DecodeBodyErrors {
+		_, err := def.DecodeBody(c.Input)
+		if !errors.Is(err, reasonToError(c.Reason)) {
+			t.Fatalf("DecodeBody(%q): got %v, want %v", c.Input, err, c.Reason)
+		}
+	}
+
+	for _, c := range v.EncodeProfile {
+		got, err := def.EncodeProfile(c.Input, def.IdrtoHashMarker)
+		if err != nil {
+			t.Fatalf("EncodeProfile(%q): %v", c.Input, err)
+		}
+		if got != c.Encoded {
+			t.Fatalf("EncodeProfile(%q) = %q, want %q", c.Input, got, c.Encoded)
+		}
+	}
+
+	for _, c := range v.EncodeProfileHash {
+		got, err := def.EncodeProfile(c.Input, def.IdrtoHashMarker)
+		if err != nil {
+			t.Fatalf("EncodeProfile(%q): %v", c.Input, err)
+		}
+		if got != c.Encoded {
+			t.Fatalf("EncodeProfile(%q) = %q, want %q", c.Input, got, c.Encoded)
+		}
+	}
+
+	for _, c := range v.EncodeProfileErrors {
+		_, err := def.EncodeProfile(c.Input, def.IdrtoHashMarker)
+		if !errors.Is(err, reasonToError(c.Reason)) {
+			t.Fatalf("EncodeProfile(%q): got %v, want %v", c.Input, err, c.Reason)
+		}
+	}
+
+	for _, c := range v.DecodeProfile {
+		got, err := def.DecodeProfile(c.Input, def.IdrtoHashMarker)
+		if err != nil {
+			t.Fatalf("DecodeProfile(%q): %v", c.Input, err)
+		}
+		if got != c.Decoded {
+			t.Fatalf("DecodeProfile(%q) = %q, want %q", c.Input, got, c.Decoded)
+		}
+	}
+
+	for _, c := range v.DecodeProfileErrors {
+		_, err := def.DecodeProfile(c.Input, def.IdrtoHashMarker)
+		if !errors.Is(err, reasonToError(c.Reason)) {
+			t.Fatalf("DecodeProfile(%q): got %v, want %v", c.Input, err, c.Reason)
+		}
+	}
 }
 
 func reasonToError(reason string) error {
@@ -40,64 +92,11 @@ func reasonToError(reason string) error {
 		return def.ErrInvalidUTF8
 	case "invalid_encoding":
 		return def.ErrInvalidEncoding
+	case "invalid_locator":
+		return def.ErrInvalidLocator
 	case "not_decodable":
 		return def.ErrNotDecodable
 	default:
-		t.Fatalf("unknown reason: %s", reason)
-		return nil
-	}
-}
-
-func TestEncodeVectors(t *testing.T) {
-	for _, c := range loadVectors(t).Encode {
-		got, err := def.Encode(c.Input)
-		if err != nil {
-			t.Fatalf("encode(%q): %v", c.Input, err)
-		}
-		if got != c.Encoded {
-			t.Fatalf("encode(%q) = %q, want %q", c.Input, got, c.Encoded)
-		}
-	}
-}
-
-func TestEncodeHashVectors(t *testing.T) {
-	for _, c := range loadVectors(t).EncodeHash {
-		got, err := def.Encode(c.Input)
-		if err != nil {
-			t.Fatalf("encode(%q): %v", c.Input, err)
-		}
-		if got != c.Encoded {
-			t.Fatalf("encode(%q) = %q, want %q", c.Input, got, c.Encoded)
-		}
-	}
-}
-
-func TestEncodeErrors(t *testing.T) {
-	for _, c := range loadVectors(t).EncodeErrors {
-		_, err := def.Encode(c.Input)
-		if !errors.Is(err, reasonToError(c.Reason)) {
-			t.Fatalf("encode(%q): got %v, want %v", c.Input, err, c.Reason)
-		}
-	}
-}
-
-func TestDecodeVectors(t *testing.T) {
-	for _, c := range loadVectors(t).Decode {
-		got, err := def.Decode(c.Input)
-		if err != nil {
-			t.Fatalf("decode(%q): %v", c.Input, err)
-		}
-		if got != c.Decoded {
-			t.Fatalf("decode(%q) = %q, want %q", c.Input, got, c.Decoded)
-		}
-	}
-}
-
-func TestDecodeErrors(t *testing.T) {
-	for _, c := range loadVectors(t).DecodeErrors {
-		_, err := def.Decode(c.Input)
-		if !errors.Is(err, reasonToError(c.Reason)) {
-			t.Fatalf("decode(%q): got %v, want %v", c.Input, err, c.Reason)
-		}
+		panic("unknown reason: " + reason)
 	}
 }

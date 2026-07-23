@@ -30,29 +30,77 @@ private:
         case DEF_ERR_BUFFER_TOO_SMALL:
             return "output buffer too small";
         case DEF_ERR_INVALID_ENCODING:
-            return "unrecognized or missing encoding prefix";
+            return "invalid profile label or marker";
+        case DEF_ERR_INVALID_LOCATOR:
+            return "invalid profile locator";
         case DEF_ERR_NOT_DECODABLE:
-            return "hash-encoded label is not decodable";
+            return "profile hash label is not decodable";
         default:
             return "unknown def error";
         }
     }
 };
 
-inline std::string encode(const std::string &input) {
-    char buffer[128];
+inline std::string encode_body(const std::string &input) {
+    char buffer[4096];
     size_t length = 0;
-    def_status status = def_encode(input.c_str(), buffer, sizeof(buffer), &length);
+    def_status status = def_encode_body(input.c_str(), buffer, sizeof(buffer), &length);
     if (status != DEF_OK) {
         throw DefError(status);
     }
     return std::string(buffer, length);
 }
 
-inline std::string decode(const std::string &encoded) {
+inline std::string decode_body(const std::string &body) {
+    char buffer[4096];
+    size_t length = 0;
+    def_status status = def_decode_body(body.c_str(), buffer, sizeof(buffer), &length);
+    if (status != DEF_OK) {
+        throw DefError(status);
+    }
+    return std::string(buffer, length);
+}
+
+inline std::string encode_profile(
+    const std::string &locator,
+    const char *marker = DEF_IDRTO_HASH_MARKER) {
     char buffer[128];
     size_t length = 0;
-    def_status status = def_decode(encoded.c_str(), buffer, sizeof(buffer), &length);
+    def_status status =
+        def_encode_profile(locator.c_str(), marker, buffer, sizeof(buffer), &length);
+    if (status != DEF_OK) {
+        throw DefError(status);
+    }
+    return std::string(buffer, length);
+}
+
+inline std::string decode_profile(
+    const std::string &label,
+    const char *marker = DEF_IDRTO_HASH_MARKER) {
+    char buffer[4096];
+    size_t length = 0;
+    def_status status =
+        def_decode_profile(label.c_str(), marker, buffer, sizeof(buffer), &length);
+    if (status != DEF_OK) {
+        throw DefError(status);
+    }
+    return std::string(buffer, length);
+}
+
+inline std::string encode(const std::string &locator) {
+    char buffer[128];
+    size_t length = 0;
+    def_status status = def_encode(locator.c_str(), buffer, sizeof(buffer), &length);
+    if (status != DEF_OK) {
+        throw DefError(status);
+    }
+    return std::string(buffer, length);
+}
+
+inline std::string decode(const std::string &label) {
+    char buffer[4096];
+    size_t length = 0;
+    def_status status = def_decode(label.c_str(), buffer, sizeof(buffer), &length);
     if (status != DEF_OK) {
         throw DefError(status);
     }

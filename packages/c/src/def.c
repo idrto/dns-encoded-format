@@ -4,10 +4,58 @@
 #include <string.h>
 
 static const char BASE36_ALPHABET[] = "0123456789abcdefghijklmnopqrstuvwxyz";
-static const size_t HASH_BODY_LENGTH = 50;
+static const char HEX_ENCODE[] = "0123456789abcdef";
+
+static int8_t HEX_DECODE[256];
+static int hex_decode_initialized = 0;
+
+static void init_hex_decode(void) {
+    if (hex_decode_initialized) {
+        return;
+    }
+
+    memset(HEX_DECODE, -1, sizeof(HEX_DECODE));
+    HEX_DECODE['0'] = 0;
+    HEX_DECODE['1'] = 1;
+    HEX_DECODE['2'] = 2;
+    HEX_DECODE['3'] = 3;
+    HEX_DECODE['4'] = 4;
+    HEX_DECODE['5'] = 5;
+    HEX_DECODE['6'] = 6;
+    HEX_DECODE['7'] = 7;
+    HEX_DECODE['8'] = 8;
+    HEX_DECODE['9'] = 9;
+    HEX_DECODE['a'] = 10;
+    HEX_DECODE['b'] = 11;
+    HEX_DECODE['c'] = 12;
+    HEX_DECODE['d'] = 13;
+    HEX_DECODE['e'] = 14;
+    HEX_DECODE['f'] = 15;
+    hex_decode_initialized = 1;
+}
 
 static int is_literal_byte(unsigned char byte) {
     return (byte >= 0x61 && byte <= 0x7a) || (byte >= 0x30 && byte <= 0x39);
+}
+
+static int is_host_start(unsigned char byte) {
+    return is_literal_byte(byte);
+}
+
+static int is_base36_byte(unsigned char byte) {
+    return (byte >= 0x30 && byte <= 0x39) || (byte >= 0x61 && byte <= 0x7a);
+}
+
+static int starts_with(const char *text, const char *prefix) {
+    return strncmp(text, prefix, strlen(prefix)) == 0;
+}
+
+static const char *find_first_separator(const char *text) {
+    return strstr(text, DEF_STRUCTURAL_SEPARATOR);
+}
+
+static int host_contains_separator(const char *host) {
+    return find_first_separator(host) != NULL;
 }
 
 static def_status append_body_char(char *output, size_t *len, size_t cap, char ch) {
@@ -20,15 +68,13 @@ static def_status append_body_char(char *output, size_t *len, size_t cap, char c
 }
 
 static def_status append_body_escape(char *output, size_t *len, size_t cap, unsigned char byte) {
-    static const char hex[] = "0123456789abcdef";
-
     if (*len + 3 >= cap) {
         return DEF_ERR_BUFFER_TOO_SMALL;
     }
 
     output[*len] = '-';
-    output[*len + 1] = hex[(byte >> 4) & 0x0f];
-    output[*len + 2] = hex[byte & 0x0f];
+    output[*len + 1] = HEX_ENCODE[(byte >> 4) & 0x0f];
+    output[*len + 2] = HEX_ENCODE[byte & 0x0f];
     *len += 3;
     return DEF_OK;
 }
@@ -62,19 +108,11 @@ static int parse_hex_byte(unsigned char h1, unsigned char h2, unsigned char *out
     int hi;
     int lo;
 
-    if (h1 >= '0' && h1 <= '9') {
-        hi = h1 - '0';
-    } else if (h1 >= 'a' && h1 <= 'f') {
-        hi = h1 - 'a' + 10;
-    } else {
-        return 0;
-    }
+    init_hex_decode();
+    hi = HEX_DECODE[h1];
+    lo = HEX_DECODE[h2];
 
-    if (h2 >= '0' && h2 <= '9') {
-        lo = h2 - '0';
-    } else if (h2 >= 'a' && h2 <= 'f') {
-        lo = h2 - 'a' + 10;
-    } else {
+    if (hi < 0 || lo < 0) {
         return 0;
     }
 
@@ -287,13 +325,13 @@ static def_status base36_encode(
     if (len != 32) {
         return DEF_ERR_BUFFER_TOO_SMALL;
     }
-    if (output_capacity < HASH_BODY_LENGTH + 1) {
+    if (output_capacity < DEF_HASH_BODY_LENGTH + 1) {
         return DEF_ERR_BUFFER_TOO_SMALL;
     }
 
     memcpy(buf, data, len);
 
-    for (i = HASH_BODY_LENGTH; i > 0; i--) {
+    for (i = DEF_HASH_BODY_LENGTH; i > 0; i--) {
         unsigned int rem = 0;
         for (size_t j = 0; j < len; j++) {
             unsigned int cur = (rem << 8) | buf[j];
@@ -303,12 +341,12 @@ static def_status base36_encode(
         output[i - 1] = BASE36_ALPHABET[rem];
     }
 
-    output[HASH_BODY_LENGTH] = '\0';
-    *output_length = HASH_BODY_LENGTH;
+    output[DEF_HASH_BODY_LENGTH] = '\0';
+    *output_length = DEF_HASH_BODY_LENGTH;
     return DEF_OK;
 }
 
-static def_status encode_def_body(
+static def_status encode_bytes(
     const unsigned char *bytes,
     size_t byte_len,
     char *output,
@@ -339,43 +377,7 @@ static def_status encode_def_body(
     return DEF_OK;
 }
 
-static def_status encode_hash(
-    const unsigned char *def_body,
-    size_t def_body_len,
-    char *output,
-    size_t output_capacity,
-    size_t *output_length
-) {
-    unsigned char digest[32];
-    size_t hash_len = 0;
-    def_status status;
-
-    sha256_digest(def_body, def_body_len, digest);
-
-    if (output_capacity < 2) {
-        return DEF_ERR_BUFFER_TOO_SMALL;
-    }
-    output[0] = HASH_PREFIX;
-
-    status = base36_encode(
-        digest,
-        sizeof(digest),
-        output + 1,
-        output_capacity - 1,
-        &hash_len
-    );
-    if (status != DEF_OK) {
-        return status;
-    }
-
-    *output_length = 1 + hash_len;
-    if (*output_length > DEF_MAX_LABEL_LENGTH) {
-        return DEF_ERR_LABEL_TOO_LONG;
-    }
-    return DEF_OK;
-}
-
-static def_status decode_def_body(
+static def_status decode_bytes(
     const char *body,
     size_t body_len,
     char *output,
@@ -429,7 +431,112 @@ static def_status decode_def_body(
     return DEF_OK;
 }
 
-def_status def_encode(
+static def_status validate_marker(const char *marker) {
+    size_t marker_len = strlen(marker);
+
+    if (marker_len < 3 || marker_len > 13) {
+        return DEF_ERR_INVALID_ENCODING;
+    }
+    if (marker[marker_len - 2] != '-' || marker[marker_len - 1] != '-') {
+        return DEF_ERR_INVALID_ENCODING;
+    }
+    if (starts_with(marker, "xn--")) {
+        return DEF_ERR_INVALID_ENCODING;
+    }
+
+    return DEF_OK;
+}
+
+static def_status split_locator(
+    const char *locator,
+    const char **host,
+    size_t *host_len,
+    const char **entity,
+    size_t *entity_len
+) {
+    const char *sep = find_first_separator(locator);
+    size_t locator_len;
+
+    if (sep == NULL) {
+        return DEF_ERR_INVALID_LOCATOR;
+    }
+
+    locator_len = strlen(locator);
+    if (sep == locator || sep + 2 >= locator + locator_len) {
+        return DEF_ERR_INVALID_LOCATOR;
+    }
+
+    *host = locator;
+    *host_len = (size_t)(sep - locator);
+    *entity = sep + 2;
+    *entity_len = locator_len - *host_len - 2;
+
+    if (*entity_len == 0) {
+        return DEF_ERR_INVALID_LOCATOR;
+    }
+    if (*host_len == 0 || !is_host_start((unsigned char)(*host)[0])) {
+        return DEF_ERR_INVALID_LOCATOR;
+    }
+
+    return DEF_OK;
+}
+
+static def_status encode_profile_hash(
+    const char *host_body,
+    size_t host_body_len,
+    const char *entity_body,
+    size_t entity_body_len,
+    const char *marker,
+    char *output,
+    size_t output_capacity,
+    size_t *output_length
+) {
+    unsigned char hash_input[4096];
+    size_t hash_input_len = 0;
+    unsigned char digest[32];
+    size_t marker_len = strlen(marker);
+    size_t hash_len = 0;
+    def_status status;
+
+    if (host_body_len + 6 + entity_body_len > sizeof(hash_input)) {
+        return DEF_ERR_BUFFER_TOO_SMALL;
+    }
+
+    memcpy(hash_input, host_body, host_body_len);
+    hash_input_len = host_body_len;
+    memcpy(hash_input + hash_input_len, "-2d-2d", 6);
+    hash_input_len += 6;
+    memcpy(hash_input + hash_input_len, entity_body, entity_body_len);
+    hash_input_len += entity_body_len;
+
+    sha256_digest(hash_input, hash_input_len, digest);
+
+    if (output_capacity < marker_len + DEF_HASH_BODY_LENGTH + 1) {
+        return DEF_ERR_BUFFER_TOO_SMALL;
+    }
+
+    memcpy(output, marker, marker_len);
+    status = base36_encode(
+        digest,
+        sizeof(digest),
+        output + marker_len,
+        output_capacity - marker_len,
+        &hash_len
+    );
+    if (status != DEF_OK) {
+        return status;
+    }
+
+    *output_length = marker_len + hash_len;
+    output[*output_length] = '\0';
+    if (*output_length > DEF_MAX_LABEL_LENGTH) {
+        return DEF_ERR_LABEL_TOO_LONG;
+    }
+
+    return DEF_OK;
+}
+
+def_status def_encode_body(
     const char *input,
     char *output,
     size_t output_capacity,
@@ -437,73 +544,200 @@ def_status def_encode(
 ) {
     char canonical[4096];
     size_t canonical_len = 0;
-    char body[4096];
-    size_t body_len = 0;
     def_status status = canonicalize_copy(input, canonical, sizeof(canonical), &canonical_len);
     if (status != DEF_OK) {
         return status;
     }
 
-    status = encode_def_body(
+    return encode_bytes(
         (const unsigned char *)canonical,
         canonical_len,
-        body,
-        sizeof(body),
-        &body_len
-    );
-    if (status != DEF_OK) {
-        return status;
-    }
-
-    if (body_len <= DEF_MAX_DEF_BODY_LENGTH) {
-        if (output_capacity < 2) {
-            return DEF_ERR_BUFFER_TOO_SMALL;
-        }
-        output[0] = DEF_PREFIX;
-        if (body_len + 1 >= output_capacity) {
-            return DEF_ERR_BUFFER_TOO_SMALL;
-        }
-        memcpy(output + 1, body, body_len);
-        output[1 + body_len] = '\0';
-        *output_length = 1 + body_len;
-        if (*output_length > DEF_MAX_LABEL_LENGTH) {
-            return DEF_ERR_LABEL_TOO_LONG;
-        }
-        return DEF_OK;
-    }
-
-    return encode_hash(
-        (const unsigned char *)body,
-        body_len,
         output,
         output_capacity,
         output_length
     );
 }
 
-def_status def_decode(
-    const char *encoded,
+def_status def_decode_body(
+    const char *body,
     char *output,
     size_t output_capacity,
     size_t *output_length
 ) {
-    size_t in_len = strlen(encoded);
+    return decode_bytes(body, strlen(body), output, output_capacity, output_length);
+}
 
-    if (in_len > DEF_MAX_LABEL_LENGTH) {
+def_status def_encode_profile(
+    const char *locator,
+    const char *marker,
+    char *output,
+    size_t output_capacity,
+    size_t *output_length
+) {
+    char canonical[4096];
+    size_t canonical_len = 0;
+    const char *host;
+    size_t host_len = 0;
+    const char *entity;
+    size_t entity_len = 0;
+    char host_body[4096];
+    size_t host_body_len = 0;
+    char entity_body[4096];
+    size_t entity_body_len = 0;
+    size_t label_len = 0;
+    def_status status;
+
+    status = validate_marker(marker);
+    if (status != DEF_OK) {
+        return status;
+    }
+
+    status = canonicalize_copy(locator, canonical, sizeof(canonical), &canonical_len);
+    if (status != DEF_OK) {
+        return status;
+    }
+
+    status = split_locator(canonical, &host, &host_len, &entity, &entity_len);
+    if (status != DEF_OK) {
+        return status;
+    }
+
+    status = encode_bytes((const unsigned char *)host, host_len, host_body, sizeof(host_body), &host_body_len);
+    if (status != DEF_OK) {
+        return status;
+    }
+
+    status = encode_bytes(
+        (const unsigned char *)entity,
+        entity_len,
+        entity_body,
+        sizeof(entity_body),
+        &entity_body_len
+    );
+    if (status != DEF_OK) {
+        return status;
+    }
+
+    label_len = host_body_len + 2 + entity_body_len;
+    if (label_len + 1 > output_capacity) {
+        return DEF_ERR_BUFFER_TOO_SMALL;
+    }
+
+    memcpy(output, host_body, host_body_len);
+    output[host_body_len] = '-';
+    output[host_body_len + 1] = '-';
+    memcpy(output + host_body_len + 2, entity_body, entity_body_len);
+    output[label_len] = '\0';
+
+    if (label_len <= DEF_MAX_LABEL_LENGTH && !starts_with(output, "xn--")) {
+        *output_length = label_len;
+        return DEF_OK;
+    }
+
+    return encode_profile_hash(
+        host_body,
+        host_body_len,
+        entity_body,
+        entity_body_len,
+        marker,
+        output,
+        output_capacity,
+        output_length
+    );
+}
+
+def_status def_decode_profile(
+    const char *label,
+    const char *marker,
+    char *output,
+    size_t output_capacity,
+    size_t *output_length
+) {
+    size_t label_len = strlen(label);
+    size_t marker_len = strlen(marker);
+    const char *sep;
+    char host[4096];
+    size_t host_len = 0;
+    char entity[4096];
+    size_t entity_len = 0;
+    size_t out_len = 0;
+    def_status status;
+
+    status = validate_marker(marker);
+    if (status != DEF_OK) {
+        return status;
+    }
+
+    if (label_len > DEF_MAX_LABEL_LENGTH) {
         return DEF_ERR_LABEL_TOO_LONG;
     }
 
-    if (in_len == 0) {
-        return DEF_ERR_INVALID_ENCODING;
-    }
+    if (starts_with(label, marker)) {
+        const char *digest = label + marker_len;
+        size_t digest_len = label_len - marker_len;
 
-    if (encoded[0] == HASH_PREFIX) {
+        if (digest_len != DEF_HASH_BODY_LENGTH) {
+            return DEF_ERR_INVALID_ENCODING;
+        }
+        for (size_t i = 0; i < digest_len; i++) {
+            if (!is_base36_byte((unsigned char)digest[i])) {
+                return DEF_ERR_INVALID_ENCODING;
+            }
+        }
         return DEF_ERR_NOT_DECODABLE;
     }
 
-    if (encoded[0] != DEF_PREFIX) {
+    if (starts_with(label, "xn--")) {
         return DEF_ERR_INVALID_ENCODING;
     }
 
-    return decode_def_body(encoded + 1, in_len - 1, output, output_capacity, output_length);
+    sep = find_first_separator(label);
+    if (sep == NULL || sep == label || sep + 2 > label + label_len) {
+        return DEF_ERR_INVALID_ENCODING;
+    }
+
+    status = decode_bytes(label, (size_t)(sep - label), host, sizeof(host), &host_len);
+    if (status != DEF_OK) {
+        return status;
+    }
+
+    status = decode_bytes(sep + 2, label_len - (size_t)(sep - label) - 2, entity, sizeof(entity), &entity_len);
+    if (status != DEF_OK) {
+        return status;
+    }
+
+    if (host_len == 0 || entity_len == 0 || host_contains_separator(host)) {
+        return DEF_ERR_INVALID_LOCATOR;
+    }
+
+    out_len = host_len + 2 + entity_len;
+    if (out_len + 1 > output_capacity) {
+        return DEF_ERR_BUFFER_TOO_SMALL;
+    }
+
+    memcpy(output, host, host_len);
+    output[host_len] = '-';
+    output[host_len + 1] = '-';
+    memcpy(output + host_len + 2, entity, entity_len);
+    output[out_len] = '\0';
+    *output_length = out_len;
+    return DEF_OK;
+}
+
+def_status def_encode(
+    const char *locator,
+    char *output,
+    size_t output_capacity,
+    size_t *output_length
+) {
+    return def_encode_profile(locator, DEF_IDRTO_HASH_MARKER, output, output_capacity, output_length);
+}
+
+def_status def_decode(
+    const char *label,
+    char *output,
+    size_t output_capacity,
+    size_t *output_length
+) {
+    return def_decode_profile(label, DEF_IDRTO_HASH_MARKER, output, output_capacity, output_length);
 }
